@@ -30,7 +30,7 @@ Bu belge şimdiye kadar yapılan her şeyin gözden geçirilmesiyle sıfırdan h
 - "Kapı sadece zil çaldıktan sonra açılabilsin" kuralı
 - Zaman senkronizasyonu (FTSP)
 - OTA güncelleme ve flash şifreleme
-- ESP-NOW Long Range modu (menzil testi gerektirirse)
+- ESP-NOW Long Range modu (saha testi gerektirirse)
 - Otomatik hafif uyku (ESP-IDF'e geçiş gerektirir, bkz. Bulgu 1)
 
 ---
@@ -210,7 +210,6 @@ YeniZil/
 │   ├── power/    power_manager.h
 │   └── app/      intercom.h · bell.h · door_opener.h
 ├── Tools/
-│   ├── RangeTest/RangeTest.ino     menzil + RSSI + MAC yazdırma
 │   └── new_site_config.ps1         rastgele apartman kimliği ve anahtar üretir
 ├── docs/ARCHITECTURE.md
 └── .gitignore                      site_config.h
@@ -347,7 +346,7 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | Sayaç rezervi | 1000 | secure_channel.h | OpenThread `STORE_FRAME_COUNTER_AHEAD` varsayılanı |
 | Şifreleme | AES-128-CCM, 8 bayt etiket | ccm_cipher.h | 802.15.4 / Zigbee / Thread / BLE standardı |
 | CPU | 80 MHz | power_config.h | Wi-Fi'ın çalıştığı en düşük frekans |
-| TX gücü | 8 dBm (başlangıç) | site_config.h | Super Mini anten raporları. **Menzil testiyle belirlenecek.** |
+| TX gücü | 8 dBm (başlangıç) | site_config.h | Super Mini anten raporları. **Saha testinde (Aşama 5) belirlenecek.** |
 | Watchdog | 5 sn, bekleme ≤ 1 sn | event_loop.h | sdkconfig |
 
 Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örneğin `pencere < aralık`, `burst periyodu ≤ pencere / 2`, `en kısa basış < en uzun basış`, "aynı pine iki eleman bağlanamaz", "MAC tablosunda tekrar olamaz". Yanlış bir değer girildiğinde program derlenmez.
@@ -412,7 +411,7 @@ Derleyici GCC 14.2, C++20 modunda (`-std=gnu++2a`). Aşağıdakiler bu ortamda d
 
 Her aşama kendi başına doğrulanabilir bir sonuçla bitiyor (Definition of Done, DoD).
 
-### Aşama 0 — Donanım kararları ve saha doğrulaması
+### Aşama 0 — Donanım kararları
 
 **Kararlar:**
 - Dış ünite ESP'si bina içine alınacak mı? (Bulgu 2)
@@ -421,12 +420,11 @@ Her aşama kendi başına doğrulanabilir bir sonuçla bitiyor (Definition of Do
 - Dışarıdaki uzun buton hatları için RC filtre önerisi: pin ile buton arasına 1 kΩ seri direnç, pin ile GND arasına 100 nF kondansatör.
 - Adaptör: kaliteli ve en az 1 A. Yüksek TX gücünde anlık akım yüzlerce mA'e çıkabiliyor, ucuz adaptörler brownout'a yol açar.
 
-**Kod:** `Tools/RangeTest`, `EspNowRadio`'nun ilk hali, `Tools/new_site_config.ps1`.
+**Kod:** Yok.
 
 **DoD:**
-- Her komşu kat bağlantısında çerçevelerin ≥ %90'ı ulaşıyor ve RSSI ≥ −85 dBm (en az 10 dB pay).
-- 2 kat ötesine bağlantı olup olmadığı ölçülüp kayıt altına alındı. Bu, bir ünite kapandığında sistemin ayakta kalıp kalmayacağını belirliyor.
-- 5 kartın MAC adresi ile seçilen kanal ve TX gücü `site_config.h`'ye yazıldı.
+- Yukarıdaki kararlar verildi.
+- 5 kartın MAC adresi toplandı. Arduino IDE her yüklemede kartın MAC adresini yükleme çıktısına yazıyor.
 
 ### Aşama 1 — İskelet ve G/Ç (ağ yok) · **kod tamam, cihaz testi bekliyor**
 
@@ -451,7 +449,7 @@ Her aşama kendi başına doğrulanabilir bir sonuçla bitiyor (Definition of Do
 
 ### Aşama 2 — Ağ (şifrelemesiz, sadece tezgâhta)
 
-**Kod:** `protocol`, `frame`, `NodeIdentity`, `EspNowRadio`'nun tamamı, `FloodRouter`, `Intercom`. `SecureChannel` aynı arayüzle ama şimdilik şifrelemesiz çalışacak.
+**Kod:** `protocol`, `frame`, `NodeIdentity`, `EspNowRadio`, `FloodRouter`, `Intercom`, `site_config.h` ve `Tools/new_site_config.ps1`. `SecureChannel` aynı arayüzle ama şimdilik şifrelemesiz çalışacak.
 
 **DoD:**
 - 3 kartla (dış ünite ve 2 iç ünite) iki akış da çalışıyor.
@@ -485,7 +483,7 @@ Her aşama kendi başına doğrulanabilir bir sonuçla bitiyor (Definition of Do
 ### Aşama 5 — Kurulum ve saha testi
 
 **DoD:**
-- Her akış 20 kez denendi, hiç kaçırma yok.
+- Her akış 20 kez denendi, hiç kaçırma yok. Kaçırma olursa önce TX gücü artırılır, yetmezse Long Range modu denenir. Seçilen kanal ve TX gücü `site_config.h`'ye yazılır.
 - 1. dairenin ünitesi fişten çekildiğinde üst katların davranışı kayıt altına alındı.
 
 ---
