@@ -29,6 +29,12 @@ class ReplayWindow {                                      // Tek kaynak için te
     seen_ |= uint64_t{1} << (highest_ - counter);
   }
 
+  constexpr void restore(uint32_t counter) {              // Kayıtlı sayaca kadar hepsini görülmüş sayar: yeniden başlamadan sonra kaydedilmiş eski çerçeve kabul edilmez
+    started_ = true;
+    highest_ = counter;
+    seen_    = ~uint64_t{0};
+  }
+
  private:
   bool     started_ = false;                              // En az bir sayaç görüldü mü
   uint32_t highest_ = 0;                                  // Görülen en yüksek sayaç

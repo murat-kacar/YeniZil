@@ -11,7 +11,7 @@ class PulseOutput : public Component {                    // Belirli süre aktif
       : pin_(pin), activeLevel_(activeLevel), durationMs_(durationMs) {}
 
   void begin() override {
-    gpio_set_level(static_cast<gpio_num_t>(pin_), inactiveLevel());  // Çıkış açılmadan önce pasif seviye yazılır, açılışta titreme olmaz
+    gpio_set_level(static_cast<gpio_num_t>(pin_), inactiveLevel());  // Çıkış açılmadan önce pasif seviye yazılır, açılışta titreme olmaz. Arduino digitalWrite() pinMode()'dan önce çalışmıyor
     pinMode(pin_, OUTPUT);
     write(false);
   }

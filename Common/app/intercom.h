@@ -5,7 +5,7 @@
 
 class Intercom {                                          // Diyafon: protokolü gizler, alan dilinde işlemler sunar (Facade)
  public:
-  using Handler = void (*)();                             // Olay işleyicisi
+  using Handler = FloodRouter::Handler;                   // Olay işleyicisi
 
   explicit Intercom(FloodRouter& router) : router_(router) {}
 

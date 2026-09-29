@@ -1,8 +1,6 @@
-# YeniZil — Mimari ve Uygulama Planı
+# YeniZil — Mimari
 
-Sürüm 1 · 28.09.2026 · Durum: **onay bekliyor**
-
-Bu belge şimdiye kadar yapılan her şeyin gözden geçirilmesiyle sıfırdan hazırlandı. Mevcut kod referans alındı ama bağlayıcı değil; neyin değiştiği ve neden değiştiği 2. bölümde.
+Sürüm 2 · 29.09.2026 · Durum: **kod tamam, donanım kurulumu bekliyor**
 
 ---
 
@@ -15,33 +13,46 @@ Bu belge şimdiye kadar yapılan her şeyin gözden geçirilmesiyle sıfırdan h
 - **İç ünite (×4):** "kapıyı aç" butonu + zil tetiği (3.3V).
 - Her ünite kendi 5V adaptöründen beslenir. Pil yok.
 - Tamamen kablosuz, internet yok. ESP-NOW ile flooding.
-- Derleme ortamı: Arduino IDE, arduino-cli 1.5.1, esp32 core 3.3.11 (ESP-IDF 5.5.5).
+- Kart: ESP32-C3 Super Mini. Derleme ortamı: Arduino IDE, esp32 core 3.3.11 (ESP-IDF 5.5.5).
 
 | Tetikleyici | Sonuç |
 |---|---|
 | Dış ünitede N. butona basılıp bırakıldı | N. dairenin zili 1,5 sn çalar |
 | N. dairede "kapıyı aç" butonuna basılıp bırakıldı | Kapı rölesi 1,5 sn tetiklenir |
 
-### 1.2 Kapsam dışı (YAGNI)
+### 1.2 Kodun kapsamı
 
-İhtiyaç doğduğunda eklenecek, şimdi tasarıma girmiyor:
+Depoda sadece şu beş işi yapan C++ kodu bulunur:
+
+1. **İşin kendisi:** buton okuma, zil ve röle tetiği, ESP-NOW ile mesajlaşma ve aktarma.
+2. **Güvenlik:** AES-128-CCM, tekrar koruması, kalıcı sayaçlar.
+3. **Güç tasarrufu:** modem uykusu ve uyanma penceresi, 80 MHz CPU, boşta WFI.
+4. **Denetimler:** basış kuralları, çerçeve denetimi, ayar ve kablolama için derleme anı `static_assert`'leri.
+5. **Optimizasyonlar:** tekrar gelen kopyaların şifre çözülmeden atılması gibi.
+
+Test kodu, tezgâh (bench) programı, yardımcı betik ve seri monitör çıktısı (log) yazılmaz. Derleme, karta yükleme ve deneme Arduino IDE ile kullanıcı tarafından yapılır. Bir sorun çıkarsa ilgili test o zaman ayrıca istenir.
+
+Her şey **Arduino-first**: önce Arduino-ESP32 core'un API ve kütüphaneleri kullanılır. ESP-IDF ya da FreeRTOS çağrısı sadece Arduino karşılığı yoksa kullanılır. Hazır kütüphane yoksa ya da mevcut olanlar güvenilmezse kod elle yazılır. Hangisinin nerede kullanıldığı 5.2'de.
+
+### 1.3 Kapsam dışı (YAGNI)
+
+İhtiyaç doğduğunda eklenecek:
 
 - Geri bildirim LED'leri
 - "Kapı sadece zil çaldıktan sonra açılabilsin" kuralı
 - Zaman senkronizasyonu (FTSP)
 - OTA güncelleme ve flash şifreleme
-- ESP-NOW Long Range modu (saha testi gerektirirse)
-- Otomatik hafif uyku (ESP-IDF'e geçiş gerektirir, bkz. Bulgu 1)
+- Otomatik hafif uyku (ESP-IDF'e geçiş gerektirir, bkz. Karar 1)
 
 ---
 
-## 2. Gözden geçirme: bulgular ve kararlar
+## 2. Kararlar
 
-### Bulgu 1 — Otomatik hafif uyku bu core'da yok
+### Karar 1 — Güç: modem uykusu + uyanma penceresi
 
 Kurulu core'un `sdkconfig` dosyasında:
-- `CONFIG_PM_ENABLE` kapalı. Yani işlemcinin boşta otomatik uykuya geçmesi mümkün değil.
-- `CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=y`. Yani ESP-NOW uyanma penceresi (%10) çalışıyor.
+- `CONFIG_PM_ENABLE` kapalı. Yani işlemci boştayken otomatik uykuya geçemiyor.
+- `CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=y`. Yani ESP-NOW uyanma penceresi çalışıyor.
 
 Beklenen tüketim (C3 datasheet: alım 84 mA, 80 MHz'de modem-sleep ve işlemci boşta 13–18 mA):
 
@@ -50,102 +61,86 @@ Beklenen tüketim (C3 datasheet: alım 84 mA, 80 MHz'de modem-sleep ve işlemci 
 | Sürekli dinleme | ≈ 85–100 mA | ≈ 0,45 W |
 | %10 pencere | 0,1 × 84 + 0,9 × 13–18 ≈ **22–25 mA** | ≈ **0,12 W** |
 
-**Karar:** Radyo %10 ile çalışacak, işlemci boşta WFI komutuyla bekleyecek. Tüketim ~3,5 kat düşüyor, ısınma ihmal edilebilir hale geliyor. `autoLightSleep` ayarı, WakeLock, `gpio_hold` ve GPIO ile uyandırma gereksiz; plandan çıkarıldı. Daha fazla tasarruf gerekirse ESP-IDF'e geçmek ayrı bir karar olur.
+**Karar:** Radyo modem uykusunda. 200 ms'de bir 20 ms uyanıp dinliyor. İşlemci boşta WFI ile bekliyor. Tüketim yaklaşık 3,5 kat düşüyor ve ısınma ihmal edilebilir hale geliyor.
 
-### Bulgu 2 — Dış ünite fiziksel olarak savunmasız
+### Karar 2 — Dış ünite ESP'si bina içinde
 
-Anahtar ve röle tetik kablosu bina dışındaki kutuda duruyor. Kutuyu açan biri tetik kablosunu 3.3V'a değdirip kapıyı açabilir. Ya da flash'ı okuyup anahtarı alabilir.
+Anahtar ve röle tetik kablosu bina dışındaki kutuda durursa kutuyu açan biri tetik kablosunu 3.3V'a değdirip kapıyı açabilir. Ya da flash'ı okuyup anahtarı alabilir.
 
-**Karar:** ESP ve röle tetiği bina içinde, kapının güvenli tarafında olacak. Dışarıda sadece butonlar kalacak. Bu, erişim kontrol sistemlerinde yaygın bir kurulum kuralı: denetleyici güvenli tarafta, okuyucu dışarıda. Aynı karar yağmur, güneş ve ısınma sorununu da çözüyor.
+**Karar:** ESP ve röle tetiği bina içinde, kapının güvenli tarafında olacak. Dışarıda sadece butonlar kalacak. Bu, erişim kontrol sistemlerinde yaygın bir kurulum kuralı. Aynı karar yağmur, güneş ve ısınma sorununu da çözüyor.
 
-### Bulgu 3 — Yeniden başlatmaya dayalı tekrar saldırısı
+### Karar 3 — Alıcı sayacı kalıcı
 
-Alıcının tekrar koruma durumu RAM'de tutuluyordu. Saldırı senaryosu:
+Tekrar koruma durumu yalnızca RAM'de tutulursa şu saldırı mümkün olur:
 1. Saldırgan bir "kapıyı aç" mesajını havadan kaydeder.
 2. Dış ünitenin fişini çekip takar. Tekrar koruma durumu sıfırlanır.
 3. Kaydettiği mesajı tekrar gönderir, kapı açılır.
 
-**Karar:** Kendine gelen ve eyleme dönüşecek her mesajın sayacı, **eylemden önce** NVS'ye yazılacak. Açılışta tekrar penceresi "kayıtlı sayaca kadar hepsi görüldü" durumuyla başlayacak.
+**Karar:** Kendine gelen ve eyleme dönüşecek her mesajın sayacı **eylemden önce** NVS'ye yazılıyor. Yazılamazsa eylem yapılmıyor. Açılışta her kaynağın tekrar penceresi "kayıtlı sayaca kadar hepsi görüldü" durumuyla başlıyor. NVS aşınmayı dengelediği için flash ömrü sorun değil: günde 50 olay × 5 ünite, 100 bin silme döngüsünün çok altında kalıyor.
 
-Flash ömrü açısından sorun yok. NVS aşınmayı dengeliyor. Günde 50 olay × 5 ünite, 100 bin silme döngülük flash ömrünün çok altında kalıyor.
+### Karar 4 — Kimlik MAC tablosundan
 
-### Bulgu 4 — Kimlik çakışması şifrelemeyi kırar
+İki ünite aynı kimlikle yüklenirse aynı (kaynak, sayaç) çiftleri, yani aynı nonce üretilir. Bu durumda AES-CCM'in güvenliği tamamen çöker.
 
-İki ünite yanlışlıkla aynı `FLAT_ID` ile yüklenirse aynı (kaynak, sayaç) çiftleri üretilir. Bu da aynı nonce demek ve AES-CCM'in güvenliği tamamen çöker.
+**Karar:** Kimlik elle yazılmıyor. Ortak `kNodeMacs[]` tablosunda her kartın MAC adresi var, kimlik tablodaki sıra: 0 = dış ünite, 1–4 = daireler. Tablonun tekrarsız olduğu derleme anında denetleniyor. Kart tabloda yoksa ya da firmware rolüyle uyuşmuyorsa ağ açılmıyor. Dört iç ünite aynı firmware'i kullanıyor.
 
-**Karar:** Kimlik elle yazılmayacak. Ortak `kNodeMacs[]` tablosunda her kartın MAC adresi yer alacak, kimlik tablodaki sıra olacak: 0 = dış ünite, 1–4 = daireler. Tablonun tekrarsız olduğu `static_assert` ile derleme anında denetlenecek. Ek bir faydası da var: dört iç ünite aynı firmware'i kullanabilir, tek derleme dört kez yüklenir.
+### Karar 5 — TTL yok
 
-### Bulgu 5 — TTL gereksiz
+Tekrar koruması her kaynak için kayan pencereyle çalışıyor. Bu yüzden bir düğüm aynı mesajı en fazla bir kez aktarıyor ve flooding'in sonlanması garanti. `hopLimit` alanı yok, bu sayede başlığın tamamı imzalı.
 
-Tekrar koruması her kaynak için tam çalışıyor (kayan pencere). Bu yüzden bir düğüm aynı mesajı en fazla bir kez aktarıyor ve flooding'in sonlanması zaten garanti.
+### Karar 6 — Sabit sıralı işlem hattı
 
-**Karar:** `hopLimit` alanı çıkarıldı. Böylece başlığın tamamı imzalı hale geldi.
+Güvenlik adımlarının sırası kritik. Pencere doğrulamadan önce ilerletilirse sahte yüksek sayaçlar gerçek mesajları engelleyebilir (DoS).
 
-### Bulgu 6 — Middleware zinciri yerine sabit sıralı işlem hattı
+**Karar:** Adımlar `SecureChannel` içinde sabit sırayla çalışıyor (Pipes and Filters kalıbının statik biçimi). Her adım ayrı bir sınıf: `frame`, `CcmCipher`, `ReplayWindow`, `CounterStore`. Sıra çalışma anında değiştirilemiyor.
 
-Güvenlik adımlarının sırası kritik. Önce doğrulama, sonra tekrar denetimi yapılmalı. Ters sıra, sahte yüksek sayaçlarla gerçek mesajların engellenmesine (DoS) yol açar. Çalışma anında yeniden sıralanabilen bir zincir bu hatayı mümkün kılar. Ayrıca aşamaların giriş ve çıkış tipleri farklı, ortak bir arayüze zorlamak için her şeyi taşıyan bir "bağlam" nesnesi gerekirdi.
+### Karar 7 — Basış kuralları tek yapıda
 
-**Karar:** Adımlar `SecureChannel` içinde sabit sırayla çalışacak. Bu, Pipes and Filters kalıbının statik biçimi. Senin önerdiğin middleware yaklaşımının amacı korunuyor: her adım ayrı bir sınıf. Tek fark, sıranın değiştirilememesi.
+Buton denetimlerinin hepsi bir basışın sayısal sınırları: en kısa süre, en uzun süre, bekleme süresi. Dış ünitedeki daire başına zil beklemesi ile iç ünitedeki kapı isteği beklemesi aynı ihtiyaç.
 
-### Bulgu 7 — `Rule<T>` ve `RuleSet<T>` şimdilik gereksiz
+**Karar:** Hepsi `PressConfig` yapısında. Ayrı kural sınıfları yok (Rule of Three), aynı mekanizma iki ünitede de kullanılıyor (DRY).
 
-Buton denetimlerinin hepsi bir basışın sayısal sınırları: en kısa süre, en uzun süre, bekleme süresi. Bunlar birer ayar değeri, ayrı kural sınıfları değil.
+### Karar 8 — 64-bit zaman
 
-**Karar:** Sınırlar `PressConfig` yapısında duracak. Farklı türde bir denetim ortaya çıktığında soyutlama eklenecek (Rule of Three).
+`millis()` 49,7 günde taşar. **Karar:** Zaman `esp_timer` tabanlı 64-bit `monotonicMs()` fonksiyonundan alınıyor.
 
-### Bulgu 8 — Aynı ihtiyaç iki yerde
+### Karar 9 — Butonlar örneklemeyle okunuyor
 
-Dış ünitedeki daire başına zil bekleme süresi ile iç ünitedeki kapı isteği bekleme süresi aynı ihtiyaç: buton başına bekleme.
+**Karar:** Butonlar 5 ms'de bir okunuyor (Ganssle: 1–5 ms). İşlemci otomatik uykuya geçmediği için (Karar 1) ek maliyeti yok. Kesme ve uyku seviyesi değişikliğinden gelen karmaşıklık da ortadan kalkıyor.
 
-**Karar:** Tek bir mekanizma olacak: `PressConfig.cooldownMs` (DRY).
+### Karar 10 — Burst süresi
 
-### Bulgu 9 — `millis()` 49,7 günde taşar
+Tek çerçevenin bir kat geçişinde ulaşma oranı %90 ise, alıcının 1 pencerede 2 kopya gördüğü durumda kat başına kaçırma %1, 4 katta ≈ %4 olur.
 
-**Karar:** Zaman 64-bit, `esp_timer` tabanlı `nowMs()` fonksiyonundan alınacak. Taşma hatası sınıfı tamamen ortadan kalkıyor.
+**Karar:** Burst süresi = 2 × aralık + pencere = **420 ms**. Alıcı 2 pencere, her pencerede 2 kopya görüyor. Kaçırma kat başına %0,01, 4 katta ≈ %0,04. Gecikme değişmiyor, çünkü mesaj yine ilk pencerede yakalanıyor.
 
-### Bulgu 10 — Butonlar kesmeyle değil, örneklemeyle okunacak
+### Karar 11 — Sırlar git dışında
 
-**Karar:** Butonlar 5 ms'de bir okunacak. Ganssle'ın önerisi 1–5 ms'lik örnekleme. İşlemci zaten uykuya geçmediği için (Bulgu 1) bunun ek maliyeti yok. Kesme kullanmaktan ve uyku seviyesini değiştirmekten kaynaklanan karmaşıklık da ortadan kalkıyor.
+**Karar:** Siteye özgü değerler (apartman kimliği, anahtar, MAC tablosu, kanal, TX gücü) git dışındaki `site_config.h` dosyasında. `site_config.example.h` şablon. Kimlik ya da anahtar sıfır bırakılırsa program derlenmiyor.
 
-### Bulgu 11 — Güvenilirlik hesabı: burst uzamalı
+### Karar 12 — AES-128-CCM, 8 bayt etiket
 
-220 ms'lik bir burst alıcıya 1 pencere ve o pencere içinde yaklaşık 2 kopya veriyor.
+IEEE 802.15.4, Zigbee, Thread ve BLE'nin kullandığı standart. mbedTLS core'da hazır ve C3'te donanım hızlandırmalı: `CONFIG_MBEDTLS_HARDWARE_AES=y`, `CONFIG_MBEDTLS_CCM_C=y`. Kapı açma kritik olduğu için etiket 4 değil 8 bayt.
 
-Tek bir çerçevenin ulaşma oranı %90 olan bir kat geçişinde:
-- Mesajın kaçırılma olasılığı 0,1² = %1
-- 4 katta toplam ≈ %4. Bu kabul edilemez.
+### Karar 13 — Gönderme sayacı rezervi ve sınırı
 
-**Karar:** Burst süresi = 2 × aralık + pencere = **420 ms**. Böylece alıcı 2 pencere, her pencerede 2 kopya görüyor:
-- Kaçırma olasılığı 0,1⁴ = kat başına %0,01
-- 4 katta ≈ %0,04
+Gönderici her mesajda sayacı flash'a yazmıyor. 1000'lik bir rezervin sonunu yazıyor, yeniden başlayınca oradan devam ediyor (OpenThread `STORE_FRAME_COUNTER_AHEAD`). Rezerv flash'a yazılamazsa ya da sayaç 32 bitin sonuna gelirse gönderim duruyor. Nonce tekrarlanmasın diye bu durumda anahtarın değişmesi gerekiyor.
 
-Gecikme değişmiyor, çünkü mesaj yine ilk pencerede yakalanıyor.
+### Karar 14 — Radyo ayarları radyonun işi
 
-### Bulgu 12 — Sırlar kaynak koddaydı
+TX gücü, Long Range, kanal, uyanma aralığı ve penceresi `RadioConfig` içinde, `EspNowRadio` tarafından uygulanıyor. `PowerManager` sadece CPU frekansını yönetiyor. Böylece bileşenler arasında başlatma sırası bağımlılığı kalmıyor.
 
-**Karar:** Siteye özgü değerler (apartman kimliği, anahtar, MAC tablosu, kanal, TX gücü) `site_config.h` dosyasına taşınacak. Bu dosya git dışında kalacak. Yanında bir `site_config.example.h` şablonu ve anahtar üreten bir betik olacak. Arduino'nun kendi `arduino_secrets.h` alışkanlığıyla aynı fikir.
+### Karar 15 — Watchdog
 
-### Bulgu 13 — Şifreleme algoritması
+`CONFIG_ESP_TASK_WDT_TIMEOUT_S=5`. **Karar:** Döngü görevi watchdog'a bağlı ve olay beklemesi en fazla 1 sn. Kod kilitlenirse cihaz yeniden başlıyor. Röle pini pull-down'da olduğu için yeniden başlama kapıyı açmıyor.
 
-**Karar:** AES-128-CCM, 8 bayt doğrulama etiketi. IEEE 802.15.4, Zigbee, Thread ve BLE'nin kullandığı standart. C3'te donanım hızlandırması var: `CONFIG_MBEDTLS_HARDWARE_AES=y`, `CONFIG_MBEDTLS_CCM_C=y`. Etiket 4 bayt yerine 8 bayt, çünkü kapı açma kritik bir işlem.
+### Karar 16 — Kopyalar şifre çözülmeden atılıyor (optimizasyon)
 
-### Bulgu 14 — Radyo ayarları radyonun işi
+Her mesaj burst yüzünden ~40 kopya geliyor. Tekrar penceresi salt okunur olarak AES'ten **önce** kontrol ediliyor, görülmüş kopya şifre çözülmeden atılıyor. Pencere sadece doğrulanmış çerçeveyle ilerlediği için bu sıralama Karar 6'daki DoS riskini doğurmuyor.
 
-TX gücü, pencere ve aralık radyonun kendi ayarları.
+### Karar 17 — Log yok
 
-**Karar:** Bu ayarlar `EspNowRadio` sınıfına (`RadioConfig`) taşındı. `PowerManager` sadece CPU frekansını yönetecek. Böylece "radyo önce başlamalı" gibi bir sıra bağımlılığı da kalmıyor.
-
-### Bulgu 15 — Watchdog
-
-`CONFIG_ESP_TASK_WDT_TIMEOUT_S=5`.
-
-**Karar:** Döngü görevi watchdog'a bağlanacak ve olay beklemesi en fazla 1 sn sürecek. Kod kilitlenirse cihaz yeniden başlar. Röle pini pull-down'da olduğu için yeniden başlama kapıyı açmaz.
-
-### Bulgu 16 — Tekrarlanabilir derleme
-
-Arduino IDE'nin kart menüsündeki ayarlar kaynak kontrolünde tutulmuyor.
-
-**Karar:** Her sketch klasörüne bir `sketch.yaml` profili eklenecek. Core sürümü (3.3.11) ve FQBN seçenekleri burada sabitlenecek.
+**Karar:** Kodda seri port ve log yok. Hatalar dönüş değeriyle bildiriliyor, başlayamayan bileşen kapalı kalıyor. Örneğin MAC tablosunda olmayan kartta ağ açılmıyor.
 
 ---
 
@@ -165,20 +160,21 @@ Arduino IDE'nin kart menüsündeki ayarlar kaynak kontrolünde tutulmuyor.
 │ Services   FloodRouter · SecureChannel                    │
 │            ButtonGroup · Button · PulseOutput             │
 ├─────────────────────────────────────────────────────────┤
-│ Platform   EspNowRadio · CounterStore · PowerManager      │
+│ Platform   EspNowRadio · BroadcastPeer · CcmCipher        │
+│            CounterStore · PowerManager                    │
 │            (ESP-IDF / Arduino'ya dokunan tek katman)       │
 ├─────────────────────────────────────────────────────────┤
 │ Core       PressDetector · ReplayWindow · frame · protocol │
 │            (saf C++: Arduino/IDF include etmez)            │
 ├─────────────────────────────────────────────────────────┤
-│ Kernel     EventLoop · Component · nowMs()                │
+│ Kernel     EventLoop · Component · monotonicMs()          │
 └─────────────────────────────────────────────────────────┘
 ```
 
 Kurallar:
 - Bağımlılık sadece aşağı doğru olabilir.
 - Config her katmana değer verir ama hiçbir katmana bağımlı değildir.
-- Core katmanındaki dosyalar platforma dokunmaz. Bu yüzden bilgisayarda test edilebilirler.
+- Core katmanındaki dosyalar platforma dokunmaz.
 
 ### 3.2 Klasör yapısı (özelliğe göre paketleme)
 
@@ -188,29 +184,25 @@ YeniZil/
 │   ├── OutDoor.ino           bağlamalar
 │   ├── outdoor_unit.h        composition root
 │   ├── hardware.h            kablolama: buton ve röle pinleri
-│   ├── unit_config.h         dış üniteye özel ayarlar
-│   └── sketch.yaml           derleme profili
+│   └── unit_config.h         dış üniteye özel ayarlar
 ├── InDoor/
 │   ├── InDoor.ino
 │   ├── indoor_unit.h
 │   ├── hardware.h
-│   ├── unit_config.h
-│   └── sketch.yaml
+│   └── unit_config.h
 ├── Common/
 │   ├── config/
 │   │   ├── site_config.example.h   şablon (git'te)
 │   │   ├── site_config.h           gerçek değerler (git dışı)
-│   │   ├── radio_config.h          pencere, aralık, burst
+│   │   ├── radio_config.h          kanal, güç, pencere, aralık, burst
 │   │   ├── input_config.h          basış sınırları
 │   │   └── power_config.h          CPU frekansı
-│   ├── kernel/   clock.h · component.h · event_loop.h
-│   ├── io/       press_detector.h (saf) · button.h · button_group.h · pulse_output.h
-│   ├── net/      protocol.h (saf) · frame.h (saf) · node_identity.h · esp_now_radio.h · flood_router.h
-│   ├── security/ replay_window.h (saf) · ccm_cipher.h · counter_store.h · secure_channel.h
+│   ├── kernel/   clock.h · component.h · polling_component.h · event_loop.h · byte_order.h · static_checks.h
+│   ├── io/       board_pins.h · digital_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h
+│   ├── net/      protocol.h · frame.h · nodes.h · node_identity.h · broadcast_peer.h · esp_now_radio.h · flood_router.h
+│   ├── security/ ccm_cipher.h · replay_window.h · counter_store.h · secure_channel.h
 │   ├── power/    power_manager.h
 │   └── app/      intercom.h · bell.h · door_opener.h
-├── Tools/
-│   └── new_site_config.ps1         rastgele apartman kimliği ve anahtar üretir
 ├── docs/ARCHITECTURE.md
 └── .gitignore                      site_config.h
 ```
@@ -219,35 +211,39 @@ YeniZil/
 
 | Sınıf | Tür | Sorumluluk | Public arayüz |
 |---|---|---|---|
-| `monotonicMs()` | platform | 64-bit monoton zaman (ms) | `uint64_t monotonicMs()` |
+| `monotonicMs()` | kernel | 64-bit monoton zaman (ms), `esp_timer` | `uint64_t monotonicMs()` |
 | `Component` | soyut | Güncellenen her şeyin ortak arayüzü. Constructor'da kendini zincire ekler (intrusive list, heap yok). | `begin()`, `update(nowMs)`, `nextDeadlineMs()` |
 | `PollingComponent` | soyut | Sabit periyotla örnekleme (Template Method). `Button` ve `ButtonGroup` ortak zamanlamayı buradan alır. | `poll(nowMs)` (korumalı) |
-| `board::isSafeGpio()` | saf | Super Mini'de açılışı etkilemeyen pinler. `hardware.h` bunu `static_assert` ile kullanır. | `constexpr bool isSafeGpio(pin)` |
-| `EventLoop` | kernel | Bileşenleri başlatır ve günceller. En yakın zamana ya da bir bildirime kadar bloklanır (≤ 1 sn). Watchdog'u besler. | `begin()`, `update()`, `notify()` |
-| `PressDetector` | saf | Seviye ve zamandan geçerli basışı çıkarır: süre sınırları, bekleme süresi, açılışta basılı gelen butonu bırakılana kadar yok sayma. | `bool update(bool pressed, uint64_t nowMs)` |
+| `EventLoop` | kernel | Bileşenleri başlatır ve günceller. En yakın zamana ya da bildirime kadar bloklanır (≤ 1 sn). Watchdog'u açar. | `begin()`, `update()`, `notify()` |
+| `writeLe` / `readLe` | kernel | Tamsayıyı little-endian yazar/okur (`std::bit_cast`) | — |
+| `allUnique()` | kernel | Tabloda tekrar var mı, derleme zamanında | `consteval bool allUnique(items, key)` |
+| `board::isSafeGpio()` | io | Super Mini'de açılışı etkilemeyen pinler | `constexpr bool isSafeGpio(pin)` |
+| `PressDetector` | core | Seviye ve zamandan geçerli basışı çıkarır: süre sınırları, bekleme süresi, açılışta basılı butonu bırakılana kadar yok sayma | `bool update(pressed, nowMs, config)` |
 | `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(void(*)())` |
-| `ButtonGroup<N>` | servis | N buton. Her butonun bir kimliği var, olay kimlikle gelir. | `onPress(void(*)(NodeId))` |
-| `PulseOutput` | servis | Belirli süre aktif kalan çıkış. Aktifken gelen tetik yok sayılır. Açılışta hemen pasife çekilir. | `activate()` |
-| `Bell` / `DoorOpener` | app | Alan dilinde eylem (composition ile `PulseOutput` kullanır) | `ring()` / `open()` |
-| `protocol` | saf | `NodeId`, `MessageType`, sürüm, sabitler | — |
-| `frame` | saf | Çerçeveyi bayt bayt yazar ve okur (struct kopyalama yok) | `encodeHeader()`, `decodeHeader()` |
-| `NodeIdentity` | platform | Kendi MAC'ini tabloda bulur, rolünü doğrular | `NodeId self()` |
-| `EspNowRadio` | platform | ESP-NOW başlatma, kanal, TX gücü, uyanma penceresi, burst gönderim, alma kuyruğu | `broadcast(const Frame&)`, `bool receive(Frame&)` |
-| `ReplayWindow` | saf | 64'lük kayan pencere | `isFresh()`, `markSeen()`, `restore()` |
-| `CcmCipher` | taşınabilir (mbedTLS) | AES-128-CCM ile şifreleme ve doğrulama | `seal()`, `bool open()` |
-| `CounterStore` | platform | NVS: gönderme sayacı rezervi, kaynak başına en yüksek sayaç | `load…()`, `save…()` |
-| `SecureChannel` | servis | Sabit sıra: doğrula → tekrar denetimi → (kendine geldiyse) kalıcı kaydet | `Frame seal(dst, type)`, `[[nodiscard]] std::optional<Message> open(frame)` |
-| `FloodRouter` | servis | Gelen çerçeveyi süzer, kendine geleni teslim eder, gerisini **değiştirmeden** aktarır | `send(dst, type)`, `on(type, void(*)())` |
-| `Intercom` | app (facade) | Protokolü gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `onRing()`, `onDoorOpenRequest()` |
+| `ButtonGroup<N>` | servis | Kimlikli N buton, olay kimlikle gelir | `onPress(void(*)(uint8_t))` |
+| `PulseOutput` | servis | Belirli süre aktif kalan çıkış. Aktifken gelen tetik yok sayılır. Açılışta titremeden pasife çekilir. | `activate()` |
+| `Bell` / `DoorOpener` | app | Alan dilinde eylem (`PulseOutput` içerir) | `ring()` / `open()` |
+| `protocol` | core | `NodeId`, `MacAddress`, `MessageType`, `Message`, sürüm | `isKnownMessageType()` |
+| `frame` | core | Çerçeveyi bayt bayt yazar ve okur, nonce üretir, alanlara `std::span` verir | `encodeHeader()`, `decodeHeader()`, `nonce()`, `header()`, `payload()`, `tag()` |
+| `nodes` | denetim | Ünite sayısı, MAC tablosu ve apartman kimliği denetimleri | `kNodeCount` |
+| `findNodeId()` | core | MAC'in tablodaki sırası = kimlik (`std::find`) | `std::optional<NodeId> findNodeId(table, mac)` |
+| `BroadcastPeer` | platform | Arduino `ESP_NOW_Peer`'den türeyen yayın eşi, Long Range hızıyla | `begin()`, `send(bytes)` |
+| `EspNowRadio` | platform | Wi-Fi/ESP-NOW başlatma, kanal, TX gücü, Long Range, modem uykusu ve uyanma penceresi, burst gönderim, alma kuyruğu | `broadcast(bytes)`, `relay(bytes)`, `bool receive(frame)`, `ownMac()` |
+| `CcmCipher` | platform | AES-128-CCM (mbedTLS) | `bool begin()`, `bool seal(...)`, `bool open(...)` |
+| `ReplayWindow` | core | 64'lük kayan pencere | `isFresh()`, `markSeen()`, `restore()` |
+| `CounterStore` | platform | NVS (`Preferences`): gönderme sayacı rezervi, kaynak başına son eylem sayacı | `begin()`, `loadTxReserve()`, `saveTxReserve()`, `loadRxCounter()`, `saveRxCounter()` |
+| `SecureChannel` | servis | Sabit sıra (3.6). Giden çerçeveyi şifreler ve imzalar. | `bool begin(self)`, `optional<Bytes> seal(dst, type)`, `optional<Message> open(bytes)` |
+| `FloodRouter` | servis | Kimliği bulur, gelen çerçeveyi süzer, kendine geleni teslim eder, gerisini **değiştirmeden** aktarır | `send(dst, type)`, `on(type, void(*)())` |
+| `Intercom` | app (Facade) | Protokolü gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `onRing()`, `onDoorOpenRequest()` |
 | `PowerManager` | platform | CPU frekansı | `begin()` |
 
 **Tasarım kuralları:**
 - Constructor'lar sadece ayarları saklar, donanıma dokunmaz. Donanım `begin()` içinde başlatılır, çünkü global nesnelerin constructor'ları Arduino hazır olmadan çalışır.
 - Bağımlılıklar constructor'dan referansla verilir (dependency injection). Nesneleri composition root kurar.
-- Sanal fonksiyon sadece `Component` arayüzünde var. Tek uygulaması olan şeyler için arayüz yazılmıyor (YAGNI).
+- Sanal fonksiyon sadece `Component` hiyerarşisinde ve Arduino'nun `ESP_NOW_Peer` sınıfında var. Tek uygulaması olan şey için arayüz yazılmıyor (YAGNI).
 - Kalıtım yerine composition tercih ediliyor: `Bell`, bir `PulseOutput` **içeriyor**, ondan türemiyor.
 
-### 3.4 Sketch'lerin son hali
+### 3.4 Sketch'ler
 
 ```cpp
 #include "outdoor_unit.h"  // Dış ünite nesneleri
@@ -285,7 +281,7 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 → FloodRouter.send(3, kRingBell)
 → SecureChannel.seal: sayaç+1, AES-CCM
 → EspNowRadio: 420 ms burst, 10 ms'de bir ─────────────────→ pencere yakalar
-                                                              doğrula, tekrar denetimi
+                                                              denetle, doğrula
                                                               hedef ≠ ben → aktar ────→ …
                                                                                         …aktar ─────→ doğrula
                                                                                                       hedef = ben
@@ -307,22 +303,24 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | `tag` | 8 | — |
 | **Toplam** | **20** | ESP-NOW sınırı 250 bayt |
 
-- **Nonce (13 bayt):** `apartmentId(4) | source(1) | counter(4) | version(1) | 0(3)`. Tekilliğini kalıcı sayaç (Bulgu 3) ve tekrarsız kimlik tablosu (Bulgu 4) birlikte garanti ediyor.
-- **Bayt sırası:** Little-endian. Alanlar tek tek yazılır, struct'lar bellekten doğrudan kopyalanmaz (padding ve endian sorunu olmasın diye).
+- **Nonce (13 bayt):** `apartmentId(4) | source(1) | counter(4) | version(1) | 0(3)`. Tekilliğini kalıcı sayaç (Karar 3, 13) ve tekrarsız kimlik tablosu (Karar 4) birlikte garanti ediyor.
+- **Bayt sırası:** Little-endian. Alanlar tek tek yazılır, struct'lar bellekten doğrudan kopyalanmaz.
 
 **Gelen çerçevenin işlenme sırası:** Ucuz denetimler önce, kripto sonra, durum değişikliği en son.
-1. Uzunluk ve sürüm doğru mu?
-2. `apartmentId` bizim apartmanın mı?
-3. `source` ben miyim? Öyleyse kendi yankım, at.
-4. AES-CCM ile doğrula ve şifreyi çöz.
-5. Tekrar penceresine bak.
-6. Hedef ben miysem: sayacı NVS'ye yaz, sonra eylemi çalıştır. Değilsem: çerçeveyi olduğu gibi aktar.
+1. Uzunluk 20 bayt mı? (`FloodRouter`)
+2. Sürüm ve `apartmentId` bizim mi?
+3. `source` ben miyim (kendi yankım) ya da `source`/`destination` tabloda yok mu? Öyleyse at.
+4. Tekrar penceresine salt okunur bak. Görülmüş kopyayı şifre çözmeden at (Karar 16).
+5. AES-CCM ile doğrula ve şifreyi çöz. Geçmezse at.
+6. Tekrar penceresini ilerlet.
+7. Mesaj tipi tanımlı mı?
+8. Hedef bensem sayacı NVS'ye yaz, yazılamazsa at, sonra eylemi çalıştır. Değilsem çerçeveyi olduğu gibi aktar.
 
 ### 3.7 Eşzamanlılık ve zaman
 
 - **Tek iş parçacığı:** Bütün mantık Arduino'nun loop görevinde çalışır.
-- **Alma:** ESP-NOW'ın alma geri çağrısı (Wi-Fi görevinde çalışır) sadece çerçeveyi kopyalar, 8 çerçevelik bir FreeRTOS kuyruğuna koyar ve loop görevini bildirimle uyandırır. Klasik üretici–tüketici kalıbı: paylaşılan durum yok, kilit yok.
-- **Döngü:** `EventLoop` her turda bütün bileşenleri günceller. Sonra en yakın `nextDeadlineMs()` zamanına kadar ya da bir bildirim gelene kadar bloklanır, en fazla 1 sn. İşlemci bu sürede WFI ile bekler.
+- **Alma:** ESP-NOW'ın alma geri çağrısı (Wi-Fi görevinde çalışır) sadece çerçeveyi kopyalar, 8 çerçevelik statik bir FreeRTOS kuyruğuna koyar ve loop görevini bildirimle uyandırır. Üretici–tüketici kalıbı: paylaşılan durum yok, kilit yok.
+- **Döngü:** `EventLoop` her turda bütün bileşenleri günceller. Sonra en yakın `nextDeadlineMs()` zamanına ya da bir bildirime kadar bloklanır, en fazla 1 sn. İşlemci bu sürede WFI ile bekler.
 
 ---
 
@@ -332,24 +330,24 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 |---|---|---|---|
 | En kısa basış | 50 ms | input_config.h | Sıçrama < 10 ms (Ganssle) · EFT patlaması 15 ms (IEC 61000-4-4) · insan basışı ≈ 80–110 ms |
 | Örnekleme periyodu | 5 ms | input_config.h | Ganssle: 1–5 ms |
-| En uzun basış | 30 sn | input_config.h | HMI "basılı tut" zaman aşımı pratiği ≥ 30 sn. **Tahmin, sahada gözden geçirilecek.** |
-| Kapı darbesi | 1,5 sn (`static_assert` 1–2 sn) | OutDoor/unit_config.h | Senin gereksinimin |
-| Zil darbesi | 1,5 sn (`static_assert` 1–2 sn) | InDoor/unit_config.h | Senin gereksinimin |
-| Zil bekleme süresi | 3 sn | OutDoor/unit_config.h | Mühendislik tercihi: 1,5 sn darbe + 1,5 sn sessizlik |
+| En uzun basış | 30 sn | input_config.h | HMI "basılı tut" zaman aşımı pratiği ≥ 30 sn. Tahmin, sahada gözden geçirilebilir. |
+| Kapı darbesi | 1,5 sn (1–2 sn) | OutDoor/unit_config.h | Gereksinim |
+| Zil darbesi | 1,5 sn (1–2 sn) | InDoor/unit_config.h | Gereksinim |
+| Zil bekleme süresi | 3 sn | OutDoor/unit_config.h | 1,5 sn darbe + 1,5 sn sessizlik |
 | Kapı isteği bekleme süresi | 2 sn | InDoor/unit_config.h | Mühendislik tercihi |
 | Uyanma aralığı | 200 ms | radio_config.h | Espressif: "100'ün katları önerilir" (`esp_wifi.h`) · 4 kat en kötü 0,8 sn |
 | Uyanma penceresi | 20 ms | radio_config.h | %10 hedefi · burst periyodunun 2 katı |
 | Burst periyodu | 10 ms | radio_config.h | Pencere başına ≥ 2 kopya |
-| Burst süresi | 420 ms (türetilmiş) | radio_config.h | 2 × aralık + pencere (Bulgu 11) |
+| Burst süresi | 420 ms (türetilmiş) | radio_config.h | 2 × aralık + pencere (Karar 10) |
 | Aktarma gecikmesi (jitter) | 0–10 ms rastgele | radio_config.h | Aktarıcılar arasında çakışmayı azaltır |
 | Tekrar penceresi | 64 | replay_window.h | RFC 6347 / RFC 4303 varsayılanı |
 | Sayaç rezervi | 1000 | secure_channel.h | OpenThread `STORE_FRAME_COUNTER_AHEAD` varsayılanı |
 | Şifreleme | AES-128-CCM, 8 bayt etiket | ccm_cipher.h | 802.15.4 / Zigbee / Thread / BLE standardı |
 | CPU | 80 MHz | power_config.h | Wi-Fi'ın çalıştığı en düşük frekans |
-| TX gücü | 8 dBm (başlangıç) | site_config.h | Super Mini anten raporları. **Saha testinde (Aşama 5) belirlenecek.** |
+| TX gücü | 8 dBm (başlangıç), Long Range açık | site_config.h | Super Mini anten raporları. Menzil yetmezse artırılır. |
 | Watchdog | 5 sn, bekleme ≤ 1 sn | event_loop.h | sdkconfig |
 
-Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örneğin `pencere < aralık`, `burst periyodu ≤ pencere / 2`, `en kısa basış < en uzun basış`, "aynı pine iki eleman bağlanamaz", "MAC tablosunda tekrar olamaz". Yanlış bir değer girildiğinde program derlenmez.
+Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örnekler: pencere < aralık, burst periyodu ≤ pencere / 2, en kısa basış < en uzun basış, aynı pine iki eleman bağlanamaz, pinler strapping/USB/UART pinine denk gelemez, MAC tablosunda tekrar olamaz, daire butonu tabloda olmayan daireye bağlanamaz, apartman kimliği ve anahtarı sıfır olamaz. Yanlış bir değer girildiğinde program derlenmez.
 
 ---
 
@@ -370,160 +368,96 @@ Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örneğin `pence
 **Bellek ve dil özellikleri:**
 - `setup()`'tan sonra heap kullanılmaz. `String`, `std::function` ve `new` yok.
 - Lambdalar değişken yakalamaz, düz fonksiyon işaretçisine dönüşür.
-- Exception ve RTTI kullanılmaz. Hatalar dönüş değeriyle bildirilir, `log_e/w/i` ile loglanır. Log seviyesi Arduino'nun "Core Debug Level" menüsünden seçilir.
-- Donanıma sahip olan sınıflar kopyalanamaz. Constructor'lar `explicit`.
+- Exception, RTTI ve log kullanılmaz. Hatalar dönüş değeriyle bildirilir (Karar 17).
+- Donanıma sahip olan sınıflar kopyalanamaz. Tek parametreli constructor'lar `explicit`.
 
 **Kod yerleşimi:**
-- Ortak kodun tamamı `.h` dosyalarında (`inline`). Arduino IDE sketch klasörü dışındaki `.cpp` dosyalarını derlemiyor, bu test edildi.
-- `.ino` içinde sadece bağlamalar olur. Arduino'nun `.ino` ön işlemcisi modern C++'ı bozabiliyor: `consteval` içeren bir fonksiyon `.ino`'da derlenmedi, aynı kod `.h` içinde derlendi (test edildi).
+- Ortak kodun tamamı `.h` dosyalarında (`inline`), çünkü Arduino IDE sketch klasörü dışındaki `.cpp` dosyalarını derlemiyor.
+- `.ino` içinde sadece bağlamalar olur. Arduino'nun `.ino` ön işlemcisi modern C++'ı bozabiliyor (ör. `consteval`), bu kod `.h` içinde durur.
 - Core katmanındaki dosyalar `Arduino.h` include etmez.
 
 ### 5.1 C++ araçları
 
-Derleyici GCC 14.2, C++20 modunda (`-std=gnu++2a`). Aşağıdakiler bu ortamda derlenerek doğrulandı. Her araç sadece gerçekten işe yaradığı yerde kullanılır.
+Derleyici GCC 14.2, C++20 modunda. Her araç sadece gerçekten işe yaradığı yerde kullanılır.
 
 | Araç | Nerede | Neden |
 |---|---|---|
-| Soyut sınıf | `Component` | 6 farklı sınıf uyguluyor. `EventLoop` hepsini tek tip görüyor. |
-| Arayüz (test sınırı) | `Radio`, `CounterStore` | Sadece bilgisayarda test seçilirse. Sahte (fake) uygulama ikinci uygulama olur. Kural: ikinci uygulama yoksa arayüz de yok. |
-| Kendi sınıf template'imiz + CTAD | `ButtonGroup<N>` | N, pin tablosunun boyutundan otomatik çıkarılır |
-| Kendi fonksiyon template'imiz (`consteval`) | `allUnique(items, key)` | Aynı denetim üç tabloda: MAC'ler, buton pinleri, daire numaraları (DRY). Aynı pine iki buton yazılırsa derleme durur (test edildi). |
-| Kendi fonksiyon template'imiz (concept kısıtlı) | `writeLe<T>` / `readLe<T>` | Tamsayıyı little-endian yazar/okur. Her tamsayı genişliği için tek kod, `std::unsigned_integral` dışındaki tipler derlenmez. |
-| `std::array` | Tekrar pencereleri, MAC tablosu | Sabit boyut, heap yok |
-| `std::optional` | `SecureChannel::open()`, `frame::decodeHeader()` | "Sonuç yok" durumunu `bool` + çıkış parametresi yerine tipin kendisi ifade eder |
-| `std::span` | Bayt tamponları | İşaretçi + uzunluk çiftinin güvenli karşılığı |
-| `<algorithm>` | MAC tablosunda arama, tekrar kontrolü | Elle döngü yerine standart algoritma |
-| `[[nodiscard]]` | `open()`, `isFresh()`, `receive()` | Doğrulama sonucu kontrol edilmeden bırakılırsa derleyici uyarır. Test edildi. |
-| `consteval` + `static_assert` | Ayar dosyaları | Ayarlar için derleme zamanı sözleşmesi, ör. "MAC tablosu tekrarsız" |
+| Soyut sınıf | `Component` | Birden çok sınıf uyguluyor, `EventLoop` hepsini tek tip görüyor |
+| Sınıf template'i + CTAD | `ButtonGroup<N>` | N, pin tablosunun boyutundan otomatik çıkarılır |
+| Fonksiyon template'i (`consteval`) | `allUnique(items, key)` | Aynı denetim üç tabloda: MAC'ler, buton pinleri, daire numaraları (DRY) |
+| Fonksiyon template'i (concept kısıtlı) | `writeLe<T>` / `readLe<T>` | Her tamsayı genişliği için tek kod, işaretsiz olmayan tipler derlenmez |
+| `std::bit_cast`, `std::endian` | `byte_order.h` | Bayt dönüşümü standart kütüphaneyle, little-endian varsayımı derleme anında denetlenir |
+| `std::array` | Tekrar pencereleri, MAC tablosu, çerçeve | Sabit boyut, heap yok |
+| `std::optional` | `SecureChannel::seal/open()`, `findNodeId()`, `loadRxCounter()` | "Sonuç yok" durumunu tipin kendisi ifade eder |
+| `std::span` | Bayt tamponları, çerçeve alanları | İşaretçi + uzunluk çiftinin güvenli karşılığı |
+| `<algorithm>` | MAC arama, pin denetimi, anahtar denetimi | Elle döngü yerine standart algoritma |
+| `[[nodiscard]]` | `open()`, `seal()`, `begin()`, `isFresh()`, `receive()`, `save…()` | Doğrulama ve kayıt sonucu kontrol edilmeden bırakılırsa derleyici uyarır |
+| `static_assert` | Ayar ve kablolama dosyaları | Ayarlar için derleme zamanı sözleşmesi |
 
 **Template yazma ölçütü:** Aynı kod farklı tipler ya da derleme zamanında bilinen farklı boyutlar için gerekiyorsa template yazılır. Tek tip varsa normal sınıf yazılır.
 
 **Kullanılmayanlar:**
-- CRTP (`Component` yerine): `EventLoop` farklı tipteki bileşenleri tek bir listede tutuyor. Bu, çalışma anı polimorfizmi (sanal fonksiyon) gerektiriyor. CRTP bunu tek başına sağlamıyor.
-- Policy-based design, variadic template zincirleri, template metaprogramming: Her politikanın tek uygulaması var. Okunabilirliği ve derleyici hata mesajlarını ağırlaştırırlar, karşılığında bir şey kazandırmazlar.
+- CRTP: `EventLoop` farklı tipteki bileşenleri tek listede tutuyor. Bu çalışma anı polimorfizmi gerektiriyor.
+- Policy-based design, variadic template zincirleri, template metaprogramming: Her politikanın tek uygulaması var. Okunabilirliği ağırlaştırırlar, karşılığında bir şey kazandırmazlar.
 - `std::vector`, `std::string`, `std::function`, `std::map`: Heap kullanıyorlar.
-- Çalışma anında davranış ekleyen attribute'lar: C++'ta yok. C++26'ya statik yansıma (reflection) girdi, ama derleyicimiz C++20 modunda.
-- Çalışma anında eklenebilir middleware zinciri: Aşamalar çalışma anında değişmiyor (Bulgu 6). İleride loglama ya da istatistik gibi her yere dokunan bir ihtiyaç doğarsa Decorator kullanılır. Örneğin `LoggingRadio`, bir `Radio`'yu sarar.
+- Çalışma anında eklenebilir middleware zinciri: Adımlar çalışma anında değişmiyor (Karar 6). Her yere dokunan bir ihtiyaç doğarsa Decorator kullanılır.
 
----
+### 5.2 Kütüphane kullanımı: Arduino-first
 
-## 6. Uygulama planı
+Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığı yoksa ESP-IDF/FreeRTOS, hazır bir şey yoksa elle yazılan kod.
 
-Her aşama kendi başına doğrulanabilir bir sonuçla bitiyor (Definition of Done, DoD).
+**Arduino:**
 
-### Aşama 0 — Donanım kararları
-
-**Kararlar:**
-- Dış ünite ESP'si bina içine alınacak mı? (Bulgu 2)
-- Kanarya zil 220V ile mi çalışıyor? Öyleyse izolasyonlu, 3.3V ile tetiklenebilen (high-level trigger) bir röle modülü gerekir.
-- Kapı rölesinin girişi nasıl: ortak GND mi, optokuplör mü? Ne kadar akım çekiyor?
-- Dışarıdaki uzun buton hatları için RC filtre önerisi: pin ile buton arasına 1 kΩ seri direnç, pin ile GND arasına 100 nF kondansatör.
-- Adaptör: kaliteli ve en az 1 A. Yüksek TX gücünde anlık akım yüzlerce mA'e çıkabiliyor, ucuz adaptörler brownout'a yol açar.
-
-**Kod:** Yok.
-
-**DoD:**
-- Yukarıdaki kararlar verildi.
-- 5 kartın MAC adresi toplandı. Arduino IDE her yüklemede kartın MAC adresini yükleme çıktısına yazıyor.
-
-### Aşama 1 — İskelet ve G/Ç (ağ yok) · **kod tamam, cihaz testi bekliyor**
-
-`PressDetector` `constexpr` olduğu için testleri `Tests/StaticTests` içinde `static_assert` olarak yazıldı. Bu testler ESP32 derleyicisiyle derleme sırasında çalışıyor, bilgisayarda C++ derleyicisi gerekmiyor. Tezgâh denemesi için `Tools/IoBench` kullanılıyor.
-
-**Kod:** kernel, io, `Bell`, `DoorOpener`, `PowerManager`, config dosyaları, `sketch.yaml`.
-
-**DoD:**
-- `PressDetector` sınır testleri geçiyor:
-
-  | Basış | Beklenen sonuç |
-  |---|---|
-  | 49 ms | Ret |
-  | 50 ms | Kabul |
-  | 30 000 ms | Kabul |
-  | 30 001 ms | Ret |
-  | Açılışta basılı | Bırakılana kadar yok sayılır |
-  | Bekleme süresi içinde | Ret |
-
-- Tezgâhta: butona basınca aynı karttaki çıkış 1,5 sn aktif oluyor.
-- `setup()` sonrasında boş heap miktarı sabit kalıyor.
-
-### Aşama 2 — Ağ (şifrelemesiz, sadece tezgâhta) · **kod tamam, cihaz testi bekliyor**
-
-Aşama 3'ten öne çekilenler:
-- `ReplayWindow`: Burst her mesajı ~40 kopya gönderiyor. Tekrarlanan kopyalar eylemi iki kez tetiklemesin diye (bu aşamanın DoD'si) şimdiden gerekli.
-- `CounterStore`'un gönderme sayacı kısmı: Gönderici yeniden başlayıp sayacı sıfırdan başlatırsa alıcılar yeni mesajları "eski" sanıp atar.
-
-Aşama 3'te kalanlar: AES-CCM ile şifreleme ve doğrulama, alıcı tarafın sayacının kalıcı kaydı.
-
-**Kod:** `protocol`, `frame`, `NodeIdentity`, `EspNowRadio`, `FloodRouter`, `Intercom`, `site_config.h` ve `Tools/new_site_config.ps1`. `SecureChannel` aynı arayüzle ama şimdilik şifrelemesiz çalışacak.
-
-**DoD:**
-- 3 kartla (dış ünite ve 2 iç ünite) iki akış da çalışıyor.
-- Aktarma yolu doğrulandı.
-- Tekrar gelen kopyalar eylemi hiçbir zaman iki kez tetiklemiyor.
-- Sürekli dinleme modunda kat başına gecikme ölçüldü.
-
-### Aşama 3 — Güvenlik
-
-**Kod:** `CcmCipher`, `ReplayWindow`, `CounterStore`, `SecureChannel`'ın tamamı.
-
-**DoD:** Aşağıdaki senaryoların hepsi geçiyor:
-
-| Senaryo | Beklenen sonuç |
+| İş | API |
 |---|---|
-| Tek biti değiştirilmiş çerçeve | Atılır |
-| Başka apartmanın çerçevesi | Atılır |
-| Kaydedilip tekrar gönderilen çerçeve | Atılır |
-| Alıcı yeniden başlatıldıktan sonra tekrar gönderilen çerçeve | Atılır |
-| Gönderici yeniden başlatıldıktan sonra yeni mesaj | Kabul edilir (sayaç rezervi sayesinde) |
+| Wi-Fi modu, Long Range, modem uykusu, kanal, TX gücü, MAC adresi | `WiFi` (`enableLongRange`, `mode`, `setSleep`, `setChannel`, `setTxPower`, `macAddress`) |
+| ESP-NOW başlatma, yayın eşi ve Long Range hızı, alma | `ESP_NOW` (`ESP_NOW.begin`, `ESP_NOW_Peer`, `onNewPeer`) |
+| Kalıcı sayaçlar | `Preferences` (NVS) |
+| Rastgele aktarma gecikmesi | `random()` (Wi-Fi açıkken donanım RNG) |
+| Pin okuma/yazma | `pinMode`, `digitalRead`, `digitalWrite` |
+| CPU frekansı | `setCpuFrequencyMhz()` |
+| Watchdog | `enableLoopWDT()` |
 
-### Aşama 4 — Güç
+**Arduino karşılığı olmadığı için ESP-IDF / FreeRTOS:**
 
-**Kod:** `EspNowRadio` uyanma penceresi modunda (`kWakeWindow`).
+| İş | API | Neden |
+|---|---|---|
+| ESP-NOW uyanma penceresi ve aralığı | `esp_now_set_wake_window`, `esp_wifi_connectionless_module_set_wake_interval` | Arduino `WiFi` ve `ESP_NOW` bu ayarları sunmuyor |
+| 64-bit zaman | `esp_timer_get_time` | Arduino `millis()` 32-bit, 49,7 günde taşar (Karar 8) |
+| Çıkışı açmadan önce pasif seviye yazmak | `gpio_set_level` | Arduino 3.x'te `digitalWrite()` `pinMode()`'dan önce çalışmıyor, açılışta röle titreyebilirdi |
+| AES-128-CCM | mbedTLS `mbedtls_ccm_*` | Arduino core'da AES-CCM sarmalayıcısı yok. mbedTLS core'la birlikte geliyor, C3'te donanım AES kullanıyor. |
+| Olay bekleme, alma kuyruğu | FreeRTOS task notification, statik kuyruk | Arduino'da görevler arası kuyruk ve bildirim API'si yok |
 
-**DoD:**
-- USB akım ölçerle her ünitede ortalama ≤ 25 mA.
-- 4 katta uçtan uca gecikmenin p95 değeri ≤ 1 sn.
-- Kutu içi sıcaklık ölçüldü.
+**Elle yazılanlar:**
 
-### Aşama 5 — Kurulum ve saha testi
-
-**DoD:**
-- Her akış 20 kez denendi, hiç kaçırma yok. Kaçırma olursa önce TX gücü artırılır, yetmezse Long Range modu denenir. Seçilen kanal ve TX gücü `site_config.h`'ye yazılır.
-- 1. dairenin ünitesi fişten çekildiğinde üst katların davranışı kayıt altına alındı.
-
----
-
-## 7. Senin kararını bekleyenler
-
-1. Dış ünite ESP'si bina içine taşınsın mı? (Bulgu 2)
-2. Kimlik, `FLAT_ID` yerine MAC tablosundan mı gelsin? (Bulgu 4)
-3. Middleware zinciri yerine sabit sıralı `SecureChannel` kabul mü? (Bulgu 6)
-4. Birim testleri nasıl çalıştırılacak? Bilgisayarda C++ derleyici yok (WSL Ubuntu var ama g++ kurulu değil). İki seçenek:
-   - **(a)** WSL'e `g++` ve `libmbedtls-dev` kurulur (sudo ve indirme gerekir). Core katmanı bilgisayarda test edilir.
-   - **(b)** Testler cihaz üzerinde çalışır.
-
-   Öneri: (a).
-5. Proje için bir git deposu başlatılsın mı? `.gitignore` ile `site_config.h` dışarıda kalır.
-6. Önceden sorulup hâlâ açık olanlar: kanarya zilin tipi, kapı rölesinin girişi.
-
----
-
-## 8. Mevcut koddan geçiş
-
-| Mevcut | Yeni |
+| Kod | Neden hazır değil |
 |---|---|
-| `Common/apartment_config.h` | `Common/config/site_config.h` (git dışı) + `.example.h` |
-| `Common/power_saver.h` + `power_config.h` | `Common/power/power_manager.h` + `Common/config/power_config.h` + `Common/config/radio_config.h` |
-| `Common/middleware.h` | Kaldırılıyor (Bulgu 6) |
-| `Common/validation.h` + `input_validation.h` | Kaldırılıyor. Yerine `PressConfig` + `PressDetector` (Bulgu 7) |
-| `Common/security.h` | `Common/security/*` |
-| `Common/protocol.h` | `Common/net/protocol.h` (`hopLimit` çıkarıldı) |
-| `Common/input_config.h` | `Common/config/input_config.h` (+ örnekleme periyodu) |
-| `*/devices.h` | `*/outdoor_unit.h`, `*/indoor_unit.h` |
-| `*/config.h` | `*/unit_config.h` (bekleme süreleri `PressConfig` içinde) |
-| `*/hardware.h` | Aynı dosya. Dış ünite buton tablosu `{daire, pin}` çiftlerine dönüşüyor. |
-| `*.ino` | 3.4'teki hali |
+| `PressDetector` | Bounce2, OneButton gibi kütüphaneler en kısa/en uzun basış, bekleme süresi ve açılışta basılı butonu yok sayma kurallarını birlikte sağlamıyor. Kural katmanı yine yazılacağı için ek bağımlılık bir şey kazandırmıyor. |
+| `ReplayWindow` | Arduino ve ESP-IDF'te bağımsız kullanılabilir bir tekrar penceresi yok. mbedTLS'inki DTLS oturumunun içinde. |
+| Burst ve flooding (`EspNowRadio`, `FloodRouter`) | Arduino core'da flooding yapan bir kütüphane yok. Espressif'in aktarma destekli `esp-now` bileşeni ESP-IDF'e geçiş gerektirir. |
+| `EventLoop` / `Component` | "En yakın zamana ya da ESP-NOW bildirimine kadar bekle" davranışını FreeRTOS sağlıyor. Üstündeki katman ince bir liste. |
+| `PulseOutput` | Arduino `Ticker` geri çağrıyı başka bir görevde çalıştırıyor. Paylaşılan durum ve kilit gerekirdi. Zamanlamayı olay döngüsü zaten yapıyor. |
+| `frame`, `protocol` | Uygulamaya özgü çerçeve biçimi |
+| Bayt sırası, arama, denetimler | C++ standart kütüphanesiyle (`std::bit_cast`, `std::find`, `<algorithm>`) |
+
+---
+
+## 6. Durum
+
+**Kod:** Tüm işlevler yazıldı: G/Ç, ağ ve aktarma, güvenlik, güç tasarrufu, denetimler.
+
+**Kurulum için gerekenler:**
+1. `Common/config/site_config.example.h` → `site_config.h` olarak kopyalanır. Apartman kimliği ve anahtar rastgele doldurulur.
+2. Kartların MAC adresleri `kNodeMacs` tablosuna yazılır: 0 dış ünite, 1–4 daireler. Arduino IDE her yüklemede kartın MAC adresini yükleme çıktısına yazıyor.
+3. `OutDoor` dış üniteye, `InDoor` dört iç üniteye Arduino IDE ile yüklenir. Kart: ESP32C3 Dev Module. Kod seri port kullanmıyor.
+
+## 7. Senin kararını bekleyenler (donanım)
+
+1. Dış ünite ESP'si bina içine alınacak mı? (Karar 2)
+2. Kanarya zil 220V ile mi çalışıyor? Öyleyse izolasyonlu, 3.3V ile tetiklenebilen (high-level trigger) bir röle modülü gerekir.
+3. Kapı rölesinin girişi nasıl: ortak GND mi, optokuplör mü? Ne kadar akım çekiyor?
+4. Dışarıdaki uzun buton hatları için RC filtre önerisi: pin ile buton arasına 1 kΩ seri direnç, pin ile GND arasına 100 nF kondansatör.
+5. Adaptör: kaliteli ve en az 1 A. Yüksek TX gücünde anlık akım yüzlerce mA'e çıkabiliyor, ucuz adaptörler brownout'a yol açar.
 
 ---
 

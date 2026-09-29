@@ -5,8 +5,8 @@
 
 namespace config {                                        // Ürün ayarları
 
-inline constexpr uint16_t kWakeIntervalMs = 200;          // Uyanma aralığı (ms), Aşama 4: Espressif 100'ün katlarını öneriyor
-inline constexpr uint16_t kWakeWindowMs   = 20;           // Uyanık kalma penceresi (ms), Aşama 4: %10 görev oranı
+inline constexpr uint16_t kWakeIntervalMs = 200;          // Uyanma aralığı (ms): Espressif 100'ün katlarını öneriyor
+inline constexpr uint16_t kWakeWindowMs   = 20;           // Uyanık kalma penceresi (ms): %10 görev oranı
 
 inline constexpr RadioConfig kRadio = {                   // Radyo ayarları, tüm ünitelerde aynı olmalı
     .channel          = site::kChannel,
@@ -15,6 +15,8 @@ inline constexpr RadioConfig kRadio = {                   // Radyo ayarları, t�
     .burstPeriodMs    = 10,                                   // Tekrar aralığı (ms): pencere başına en az 2 kopya
     .burstDurationMs  = 2 * kWakeIntervalMs + kWakeWindowMs,  // Tekrar süresi (ms): alıcı 2 pencere görür, kat başına kaçırma ≈ %0,01
     .relayJitterMaxMs = 10,                                   // Aktarmadan önce en fazla rastgele bekleme (ms): aktarıcılar çakışmasın
+    .wakeIntervalMs   = kWakeIntervalMs,
+    .wakeWindowMs     = kWakeWindowMs,
 };
 
 static_assert(kRadio.channel >= 1 && kRadio.channel <= 13, "Kanal 1-13 olmalı");
