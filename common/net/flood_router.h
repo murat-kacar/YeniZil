@@ -7,7 +7,6 @@
 #include "../security/secure_channel.h"
 #include "esp_now_radio.h"
 #include "frame.h"
-#include "node_identity.h"
 #include "nodes.h"
 #include "protocol.h"
 
@@ -17,7 +16,7 @@ class FloodRouter : public Component {                    // Flooding: kendine g
  public:
   using Handler = void (*)();                             // Mesaj işleyicisi
 
-  FloodRouter(EspNowRadio& radio, SecureChannel& channel, NodeIdentity& identity) : radio_(radio), channel_(channel), identity_(identity) {}
+  FloodRouter(EspNowRadio& radio, SecureChannel& channel, NodeId self) : radio_(radio), channel_(channel), self_(self) {}
 
   void begin() override { ready_ = channel_.begin(EspNowRadio::ownMac()); }  // Güvenlik başlamazsa ağ kapalı kalır
 
@@ -27,10 +26,9 @@ class FloodRouter : public Component {                    // Flooding: kendine g
       if (ready_) handle(received);
   }
 
-  void send(NodeId destination, MessageType type) {       // Hedefe mesaj gönderir, eşleşmemiş ünite gönderemez
-    const std::optional<NodeId> self = identity_.id();
-    if (!ready_ || !self || !isDestination(destination) || destination == *self) return;
-    if (const std::optional<frame::Bytes> bytes = channel_.seal(*self, destination, type)) radio_.broadcast(*bytes);
+  void send(NodeId destination, MessageType type) {       // Hedefe mesaj gönderir
+    if (!ready_ || !isDestination(destination) || destination == self_) return;
+    if (const std::optional<frame::Bytes> bytes = channel_.seal(self_, destination, type)) radio_.broadcast(*bytes);
   }
 
   void on(MessageType type, Handler handler) { handlers_[static_cast<std::size_t>(type)] = handler; }  // Mesaj tipine işleyici bağlar
@@ -42,14 +40,12 @@ class FloodRouter : public Component {                    // Flooding: kendine g
     std::copy_n(received.bytes.begin(), frame::kSize, bytes.begin());
     const std::optional<Message> message = channel_.open(bytes);
     if (!message) return;
-    if (identity_.isPairing() && message->type == MessageType::kRingBell && isFlatId(message->destination))
-      identity_.adopt(message->destination);              // Eşleştirme (learn mode): gelen ilk zil isteğinin dairesi bu ünitenin kimliği olur
     if (message->destination == kAllUnitsId) {            // Herkese: aktar ve teslim et. Sadece heartbeat, eylem olmadığı için kalıcı kayıt yok (flash aşınmaz)
       radio_.relay(bytes);
       if (message->type == MessageType::kHeartbeat) deliver(*message);
       return;
     }
-    if (message->destination != identity_.id()) {
+    if (message->destination != self_) {
       radio_.relay(bytes);                                // Başkasının çerçevesi değiştirilmeden aktarılır
       return;
     }
@@ -63,7 +59,7 @@ class FloodRouter : public Component {                    // Flooding: kendine g
 
   EspNowRadio&                              radio_;       // Radyo
   SecureChannel&                            channel_;     // Çerçeve üretimi ve doğrulama
-  NodeIdentity&                             identity_;    // Bu ünitenin kimliği
+  NodeId                                    self_;        // Bu ünitenin kimliği: dış ünite 0, iç ünite kFlatId
   bool                                      ready_ = false;  // Güvenlik başladı, ağ açık
   std::array<Handler, kMessageTypeCount>    handlers_{};  // Tip başına işleyici
 };

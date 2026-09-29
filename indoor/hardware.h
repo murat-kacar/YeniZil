@@ -3,8 +3,8 @@
 #include <Arduino.h>
 #include <algorithm>
 #include <iterator>
-#include "../Common/io/board_pins.h"
-#include "../Common/kernel/static_checks.h"
+#include "../common/io/board_pins.h"
+#include "../common/kernel/static_checks.h"
 
 namespace pins {                                          // İç ünite kablolaması
 

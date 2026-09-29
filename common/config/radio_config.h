@@ -1,17 +1,19 @@
 #pragma once
 
 #include "../net/esp_now_radio.h"
-#include "site_config.h"
 
 namespace config {                                        // Ürün ayarları
 
+inline constexpr uint8_t  kChannel        = 1;            // Wi-Fi kanalı (1-13), tüm ünitelerde aynı: sahada en boş kanal seçilir
+inline constexpr int8_t   kTxPowerDbm     = 8;            // Gönderim gücü (dBm): menzil yetmezse artırılır
+inline constexpr bool     kLongRange      = true;         // Espressif Long Range 250 kbps: daha uzun menzil, tüm ünitelerde aynı
 inline constexpr uint16_t kWakeIntervalMs = 200;          // Uyanma aralığı (ms): Espressif 100'ün katlarını öneriyor
 inline constexpr uint16_t kWakeWindowMs   = 20;           // Uyanık kalma penceresi (ms): %10 görev oranı
 
 inline constexpr RadioConfig kRadio = {                   // Radyo ayarları, tüm ünitelerde aynı olmalı
-    .channel          = site::kChannel,
-    .txPowerDbm       = site::kTxPowerDbm,
-    .longRange        = site::kLongRange,
+    .channel          = kChannel,
+    .txPowerDbm       = kTxPowerDbm,
+    .longRange        = kLongRange,
     .burstPeriodMs    = 10,                                   // Tekrar aralığı (ms): pencere başına en az 2 kopya
     .burstDurationMs  = 2 * kWakeIntervalMs + kWakeWindowMs,  // Tekrar süresi (ms): alıcı 2 pencere görür, kat başına kaçırma ≈ %0,01
     .relayJitterMaxMs = 10,                                   // Aktarmadan önce en fazla rastgele bekleme (ms): aktarıcılar çakışmasın

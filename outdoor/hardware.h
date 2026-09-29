@@ -3,9 +3,9 @@
 #include <Arduino.h>
 #include <algorithm>
 #include <iterator>
-#include "../Common/io/board_pins.h"
-#include "../Common/io/button_group.h"
-#include "../Common/kernel/static_checks.h"
+#include "../common/io/board_pins.h"
+#include "../common/io/button_group.h"
+#include "../common/kernel/static_checks.h"
 
 namespace pins {                                          // Dış ünite kablolaması
 

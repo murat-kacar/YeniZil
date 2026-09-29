@@ -79,17 +79,20 @@ Tekrar koruma durumu yalnızca RAM'de tutulursa şu saldırı mümkün olur:
 
 **Karar:** Kendine gelen ve eyleme dönüşecek her mesajın sayacı, gönderen kartın MAC'i anahtar olarak kullanılarak **eylemden önce** NVS'ye yazılıyor. Yazılamazsa eylem yapılmıyor. Açılıştan sonra bir karttan ilk doğrulanmış çerçeve geldiğinde o kartın tekrar penceresi "kayıtlı sayaca kadar hepsi görüldü" durumuyla başlıyor. NVS aşınmayı dengelediği için flash ömrü sorun değil: günde 50 olay × 5 ünite, 100 bin silme döngüsünün çok altında kalıyor.
 
-### Karar 4 — Kimlik: MAC + eşleştirme (IEEE 802.15.4 / Zigbee / kablosuz zil yöntemi)
+### Karar 4 — Kimlik yüklemede verilir, nonce MAC'ten üretilir
 
-Standart kablosuz ağlarda iki kavram ayrı tutuluyor:
+Bütün atamalar firmware'e yükleme sırasında veriliyor. Kurulumda cihazla ayrıca bir işlem yapılmıyor.
 
-- **Cihaz kimliği = fabrika MAC adresi.** Gönderen kartın MAC'i her çerçevede taşınıyor. AES-CCM nonce'u MAC + sayaçtan üretiliyor. Tekrar koruması ve kalıcı sayaçlar göndereni MAC'e göre izliyor. 802.15.4 CCM* nonce'u da gönderen adresi + sayaçtan oluşuyor. MAC fabrikadan tekil olduğu için nonce hiçbir koşulda tekrarlanmıyor. Bir kart değiştirildiğinde yeni kartın sayacı sıfırdan başlasa bile reddedilmiyor.
-- **Mantıksal adres (hangi daire) = kurulumda eşleştirme (learn mode).** Dış ünite her zaman 0. İç ünitenin daire numarası firmware'e yazılmıyor, eşleştirmeyle öğrenilip NVS'de saklanıyor:
-  1. Eşleşmemiş iç ünite açıldığı andan itibaren eşleştirme modundadır. Daha önce eşleşmiş bir üniteyi yeniden eşleştirmek için "kapıyı aç" butonu basılıyken fişe takılır, en az 5 sn basılı tutulup bırakılır. Eşleştirme modu 2 dakika sürer.
-  2. Dış ünitede o dairenin butonuna basılır.
-  3. Eşleştirme modundaki ünite doğrulanmış ilk zil isteğinin dairesini kendi kimliği olarak NVS'ye yazar ve zili çalar. Zilin çalması eşleşmenin onayıdır.
+- **Dış ünite:** Kimliği her zaman 0. Hangi butonun hangi daireyi çaldıracağı `outdoor/hardware.h` içindeki `{daire, pin}` tablosunda.
+- **İç ünite:** Daire numarası `indoor/indoor_config.h` içindeki `kFlatId` (1..`kFlatCount`). Her iç üniteye yüklemeden önce ayarlanıyor. Aralık dışı bir değer derlenmiyor.
 
-Eşleştirme mesajları da apartman anahtarıyla doğrulanıyor. Anahtarı bilmeyen biri bir üniteye kimlik atayamaz. Eşleştirme sırasında başka bir dairenin zili çalınırsa ünite o daireyi öğrenir. Bu durumda eşleştirme tekrarlanır.
+Elle verilen kimlikte iki kartın yanlışlıkla aynı numarayla yüklenmesi mümkün. Nonce kimlikten üretilseydi bu, aynı nonce demek olurdu ve AES-CCM'in güvenliği çökerdi.
+
+**Karar:** Gönderen kartın fabrika MAC adresi her çerçevede taşınıyor. Nonce MAC + sayaçtan üretiliyor (IEEE 802.15.4 CCM* yöntemi). Tekrar koruması ve kalıcı sayaçlar da göndereni MAC'e göre izliyor. Bunun iki sonucu var:
+- Numaralar çakışsa bile nonce tekrarlanmıyor, çakışmanın etkisi sadece işlevsel kalıyor.
+- Bir kart değiştirildiğinde yeni kartın sayacı sıfırdan başlasa bile mesajları reddedilmiyor.
+
+Kullanıcının MAC'le ilgili yapacağı bir şey yok.
 
 ### Karar 5 — TTL yok
 
@@ -121,9 +124,16 @@ Tek çerçevenin bir kat geçişinde ulaşma oranı %90 ise, alıcının 1 pence
 
 **Karar:** Burst süresi = 2 × aralık + pencere = **420 ms**. Alıcı 2 pencere, her pencerede 2 kopya görüyor. Kaçırma kat başına %0,01, 4 katta ≈ %0,04. Gecikme değişmiyor, çünkü mesaj yine ilk pencerede yakalanıyor.
 
-### Karar 11 — Sırlar git dışında
+### Karar 11 — Yüklemeden önce değişen değerler tek dosyada
 
-**Karar:** Siteye özgü değerler (apartman kimliği, anahtar, daire sayısı, kanal, TX gücü) git dışındaki `site_config.h` dosyasında. `site_config.example.h` şablon. Kimlik ya da anahtar sıfır bırakılırsa program derlenmiyor.
+**Karar:** Yüklemeden önce değiştirilen her şey her ünitenin kendi config dosyasında duruyor. Başka hiçbir dosyaya dokunulmuyor.
+
+- `outdoor/outdoor_config.h`: ağ (apartman) kimliği, ağ şifresi.
+- `indoor/indoor_config.h`: ağ (apartman) kimliği, ağ şifresi, daire numarası.
+
+Kimlik ve şifre beş ünitede aynı olmalı. Dosyalar git'te. Depo herkese açık bir yere konursa şifre değiştirilip üniteler yeniden yüklenmeli. Kimlik ya da şifre sıfır bırakılırsa, daire numarası aralık dışındaysa program derlenmiyor.
+
+Dış ünitenin ağdaki numarası (0) ve ünitenin diğer ayarları (darbe süreleri, basış kuralları) `outdoor_unit.h` / `indoor_unit.h` içinde. Daire sayısı, kanal ve TX gücü gibi bina geneli ayarlar `common/config` altında.
 
 ### Karar 12 — AES-128-CCM, 8 bayt etiket
 
@@ -193,32 +203,31 @@ Kurallar:
 
 ```
 YeniZil/
-├── OutDoor/
-│   ├── OutDoor.ino           bağlamalar
-│   ├── outdoor_unit.h        composition root
+├── outdoor/
+│   ├── outdoor.ino           bağlamalar
+│   ├── outdoor_unit.h        composition root + ünite ayarları
 │   ├── hardware.h            kablolama: buton ve röle pinleri
-│   └── unit_config.h         dış üniteye özel ayarlar
-├── InDoor/
-│   ├── InDoor.ino
+│   └── outdoor_config.h      yüklemeden önce: ağ kimliği, şifre
+├── indoor/
+│   ├── indoor.ino
 │   ├── indoor_unit.h
 │   ├── hardware.h
-│   └── unit_config.h
-├── Common/
+│   └── indoor_config.h       yüklemeden önce: ağ kimliği, şifre, daire numarası
+├── common/
 │   ├── config/
-│   │   ├── site_config.example.h   şablon (git'te)
-│   │   ├── site_config.h           gerçek değerler (git dışı)
-│   │   ├── radio_config.h          kanal, güç, pencere, aralık, burst
+│   │   ├── building_config.h       daire sayısı
+│   │   ├── radio_config.h          kanal, güç, Long Range, pencere, aralık, burst
 │   │   ├── input_config.h          basış sınırları
 │   │   ├── link_config.h           heartbeat aralığı, bağlantı zaman aşımı
 │   │   └── power_config.h          CPU frekansı
 │   ├── kernel/   clock.h · component.h · polling_component.h · periodic_timer.h · event_loop.h · byte_order.h · static_checks.h
 │   ├── io/       board_pins.h · digital_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h · indicator_led.h
-│   ├── net/      protocol.h · frame.h · nodes.h · node_identity.h · learned_identity.h · broadcast_peer.h · esp_now_radio.h · flood_router.h
+│   ├── net/      protocol.h · frame.h · nodes.h · broadcast_peer.h · esp_now_radio.h · flood_router.h
 │   ├── security/ ccm_cipher.h · replay_window.h · counter_store.h · secure_channel.h
 │   ├── power/    power_manager.h
 │   └── app/      intercom.h · bell.h · door_opener.h · link_monitor.h
 ├── docs/ARCHITECTURE.md
-└── .gitignore                      site_config.h
+└── .gitignore                      build/
 ```
 
 ### 3.3 Sınıflar
@@ -233,8 +242,8 @@ YeniZil/
 | `writeLe` / `readLe` | kernel | Tamsayıyı little-endian yazar/okur (`std::bit_cast`) | — |
 | `allUnique()` | kernel | Tabloda tekrar var mı, derleme zamanında | `consteval bool allUnique(items, key)` |
 | `board::isSafeGpio()` | io | Super Mini'de açılışı etkilemeyen pinler | `constexpr bool isSafeGpio(pin)` |
-| `PressDetector` | core | Seviye ve zamandan basış olayı çıkarır: süre sınırları, bekleme süresi, açılışta basılı butonu bırakılana kadar yok sayma, açılışta uzun basılı tutma | `PressEvent update(pressed, nowMs, config)` |
-| `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(void(*)())`, `onStartupHold(void(*)())` |
+| `PressDetector` | core | Seviye ve zamandan geçerli basışı çıkarır: süre sınırları, bekleme süresi, açılışta basılı butonu bırakılana kadar yok sayma | `bool update(pressed, nowMs, config)` |
+| `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(void(*)())` |
 | `ButtonGroup<N>` | servis | Kimlikli N buton, olay kimlikle gelir | `onPress(void(*)(uint8_t))` |
 | `PulseOutput` | servis | Belirli süre aktif kalan çıkış. Aktifken gelen tetik yok sayılır. Açılışta titremeden pasife çekilir. | `activate()` |
 | `IndicatorLed` | servis | Sürekli yanan ya da yanıp sönen LED, pini sadece durum değişince yazar | `turnOn()`, `blink()` |
@@ -243,23 +252,20 @@ YeniZil/
 | `protocol` | core | `NodeId`, `MacAddress`, `MessageType`, `Message`, sürüm | `isKnownMessageType()` |
 | `frame` | core | Çerçeveyi bayt bayt yazar ve okur, nonce üretir, alanlara `std::span` verir | `encodeHeader()`, `decodeHeader()`, `nonce()`, `header()`, `payload()`, `tag()` |
 | `nodes` | denetim | Ünite sayısı, daire kimliği ve apartman kimliği denetimleri | `kNodeCount`, `isFlatId()` |
-| `NodeIdentity` | arayüz (Strategy) | Bu ünitenin mantıksal adresi | `id()`, `isPairing()`, `adopt(id)` |
-| `FixedIdentity` | core | Sabit kimlik: dış ünite (0) | — |
-| `LearnedIdentity` | platform | Eşleştirmeyle öğrenilen, NVS'de saklanan kimlik: iç ünite | `startPairing()` |
 | `BroadcastPeer` | platform | Arduino `ESP_NOW_Peer`'den türeyen yayın eşi, Long Range hızıyla | `begin()`, `send(bytes)` |
 | `EspNowRadio` | platform | Wi-Fi/ESP-NOW başlatma, kanal, TX gücü, Long Range, modem uykusu ve uyanma penceresi, burst gönderim, alma kuyruğu | `broadcast(bytes)`, `relay(bytes)`, `bool receive(frame)`, `ownMac()` |
 | `CcmCipher` | platform | AES-128-CCM (mbedTLS) | `bool begin()`, `bool seal(...)`, `bool open(...)` |
 | `ReplayWindow` | core | 64'lük kayan pencere | `isFresh()`, `markSeen()`, `restore()` |
 | `CounterStore` | platform | NVS (`Preferences`): gönderme sayacı rezervi, gönderen MAC başına son eylem sayacı | `begin()`, `loadTxReserve()`, `saveTxReserve()`, `loadRxCounter()`, `saveRxCounter()` |
 | `SecureChannel` | servis | Sabit sıra (3.6). Giden çerçeveyi şifreler ve imzalar. Tekrar penceresi gönderen MAC başına. | `bool begin(mac)`, `optional<Bytes> seal(src, dst, type)`, `optional<Message> open(bytes)`, `bool commit(message)` |
-| `FloodRouter` | servis | Gelen çerçeveyi süzer, eşleştirme modunda kimliği öğretir, kendine geleni kalıcı kayıttan sonra teslim eder, gerisini **değiştirmeden** aktarır | `send(dst, type)`, `on(type, void(*)())` |
+| `FloodRouter` | servis | Gelen çerçeveyi süzer, kendine geleni kalıcı kayıttan sonra teslim eder, gerisini **değiştirmeden** aktarır | `send(dst, type)`, `on(type, void(*)())` |
 | `Intercom` | app (Facade) | Protokolü gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `broadcastHeartbeat()`, `onRing()`, `onDoorOpenRequest()`, `onHeartbeat()` |
 | `PowerManager` | platform | CPU frekansı | `begin()` |
 
 **Tasarım kuralları:**
 - Constructor'lar sadece ayarları saklar, donanıma dokunmaz. Donanım `begin()` içinde başlatılır, çünkü global nesnelerin constructor'ları Arduino hazır olmadan çalışır.
 - Bağımlılıklar constructor'dan referansla verilir (dependency injection). Nesneleri composition root kurar.
-- Sanal fonksiyon sadece `Component` hiyerarşisinde, iki uygulaması olan `NodeIdentity` arayüzünde ve Arduino'nun `ESP_NOW_Peer` sınıfında var. Tek uygulaması olan şey için arayüz yazılmıyor (YAGNI).
+- Sanal fonksiyon sadece `Component` hiyerarşisinde ve Arduino'nun `ESP_NOW_Peer` sınıfında var. Tek uygulaması olan şey için arayüz yazılmıyor (YAGNI).
 - Kalıtım yerine composition tercih ediliyor: `Bell`, bir `PulseOutput` **içeriyor**, ondan türemiyor.
 
 ### 3.4 Sketch'ler
@@ -281,12 +287,11 @@ void loop() { eventLoop.update(); }
 #include "indoor_unit.h"  // İç ünite nesneleri
 
 void setup() {
-  openDoorButton.onPress([] { intercom.requestDoorOpen(); });     // Kapıyı aç butonu -> dış üniteye istek
-  openDoorButton.onStartupHold([] { identity.startPairing(); });  // Açılışta basılı tutuldu -> eşleştirme modu
-  intercom.onRing([] { bell.ring(); });                            // Zil isteği -> zil çalar
-  intercom.onHeartbeat([] { linkMonitor.refresh(); });             // Dış üniteden "buradayım" -> bağlantı var
-  linkMonitor.onConnected([] { linkLed.turnOn(); });               // Bağlantı sağlandı -> LED sürekli yanar
-  linkMonitor.onLost([] { linkLed.blink(); });                     // Bağlantı yok -> LED yanıp söner
+  openDoorButton.onPress([] { intercom.requestDoorOpen(); });  // Kapıyı aç butonu -> dış üniteye istek
+  intercom.onRing([] { bell.ring(); });                         // Zil isteği -> zil çalar
+  intercom.onHeartbeat([] { linkMonitor.refresh(); });          // Dış üniteden "buradayım" -> bağlantı var
+  linkMonitor.onConnected([] { linkLed.turnOn(); });            // Bağlantı sağlandı -> LED sürekli yanar
+  linkMonitor.onLost([] { linkLed.blink(); });                  // Bağlantı yok -> LED yanıp söner
   eventLoop.begin();
 }
 
@@ -339,9 +344,8 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 5. AES-CCM ile doğrula ve şifreyi çöz. Geçmezse at.
 6. Gönderen MAC için pencere yoksa şimdi aç ve kayıtlı sayacı NVS'den yükle. Yer sadece doğrulanmış göndericiye ayrılıyor, sahte MAC'ler tabloyu dolduramıyor. Pencereyi ilerlet.
 7. Mesaj tipi tanımlı mı?
-8. Eşleştirme modundaysam ve bu bir zil isteğiyse hedef daireyi kimliğim olarak kaydet (Karar 4).
-9. Hedef herkesse (heartbeat) aktar ve teslim et, kalıcı kayıt yok (Karar 18).
-10. Hedef bensem sayacı NVS'ye yaz, yazılamazsa at, sonra eylemi çalıştır. Değilsem çerçeveyi olduğu gibi aktar.
+8. Hedef herkesse (heartbeat) aktar ve teslim et, kalıcı kayıt yok (Karar 18).
+9. Hedef bensem sayacı NVS'ye yaz, yazılamazsa at, sonra eylemi çalıştır. Değilsem çerçeveyi olduğu gibi aktar.
 
 ### 3.7 Eşzamanlılık ve zaman
 
@@ -358,15 +362,13 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | En kısa basış | 50 ms | input_config.h | Sıçrama < 10 ms (Ganssle) · EFT patlaması 15 ms (IEC 61000-4-4) · insan basışı ≈ 80–110 ms |
 | Örnekleme periyodu | 5 ms | input_config.h | Ganssle: 1–5 ms |
 | En uzun basış | 30 sn | input_config.h | HMI "basılı tut" zaman aşımı pratiği ≥ 30 sn. Tahmin, sahada gözden geçirilebilir. |
-| Kapı darbesi | 1,5 sn (1–2 sn) | OutDoor/unit_config.h | Gereksinim |
-| Zil darbesi | 1,5 sn (1–2 sn) | InDoor/unit_config.h | Gereksinim |
-| Zil bekleme süresi | 3 sn | OutDoor/unit_config.h | 1,5 sn darbe + 1,5 sn sessizlik |
-| Kapı isteği bekleme süresi | 2 sn | InDoor/unit_config.h | Mühendislik tercihi |
-| Eşleştirme için basılı tutma | 5 sn (≥ 3 sn) | InDoor/unit_config.h | Kazara olmayacak kadar uzun |
-| Eşleştirme penceresi | 2 dk (≥ 30 sn) | InDoor/unit_config.h | Dış üniteye yürümeye yetecek süre |
+| Kapı darbesi | 1,5 sn (1–2 sn) | outdoor_unit.h | Gereksinim |
+| Zil darbesi | 1,5 sn (1–2 sn) | indoor_unit.h | Gereksinim |
+| Zil bekleme süresi | 3 sn | outdoor_unit.h | 1,5 sn darbe + 1,5 sn sessizlik |
+| Kapı isteği bekleme süresi | 2 sn | indoor_unit.h | Mühendislik tercihi |
 | Heartbeat aralığı | 30 sn (≥ 10 sn) | link_config.h | Her yayın tüm üniteleri 420 ms gönderime sokuyor |
 | Bağlantı zaman aşımı | 95 sn (türetilmiş) | link_config.h | 3 × aralık + 5 sn: tek kaçırılan yayın LED'i düşürmez |
-| LED yanıp sönme | 0,5 sn yanık / 0,5 sn sönük | InDoor/unit_config.h | Belirgin, göz yormayan hız |
+| LED yanıp sönme | 0,5 sn yanık / 0,5 sn sönük | indoor_unit.h | Belirgin, göz yormayan hız |
 | Uyanma aralığı | 200 ms | radio_config.h | Espressif: "100'ün katları önerilir" (`esp_wifi.h`) · 4 kat en kötü 0,8 sn |
 | Uyanma penceresi | 20 ms | radio_config.h | %10 hedefi · burst periyodunun 2 katı |
 | Burst periyodu | 10 ms | radio_config.h | Pencere başına ≥ 2 kopya |
@@ -376,7 +378,7 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | Sayaç rezervi | 1000 | secure_channel.h | OpenThread `STORE_FRAME_COUNTER_AHEAD` varsayılanı |
 | Şifreleme | AES-128-CCM, 8 bayt etiket | ccm_cipher.h | 802.15.4 / Zigbee / Thread / BLE standardı |
 | CPU | 80 MHz | power_config.h | Wi-Fi'ın çalıştığı en düşük frekans |
-| TX gücü | 8 dBm (başlangıç), Long Range açık | site_config.h | Super Mini anten raporları. Menzil yetmezse artırılır. |
+| TX gücü | 8 dBm (başlangıç), Long Range açık | radio_config.h | Super Mini anten raporları. Menzil yetmezse artırılır. |
 | Watchdog | 5 sn, bekleme ≤ 1 sn | event_loop.h | sdkconfig |
 
 Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örnekler: pencere < aralık, burst periyodu ≤ pencere / 2, en kısa basış < en uzun basış, aynı pine iki eleman bağlanamaz, pinler strapping/USB/UART pinine denk gelemez, daire butonu olmayan bir daireye bağlanamaz, apartman kimliği ve anahtarı sıfır olamaz. Yanlış bir değer girildiğinde program derlenmez.
@@ -389,12 +391,12 @@ Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örnekler: pence
 - Tanımlayıcılar İngilizce, açıklamalar Türkçe ve sadece satır sonunda.
 - Sabitler: `kPascalCase`, namespace içinde `inline constexpr`. `#define` kullanılmıyor.
 - Tipler PascalCase, fonksiyon ve değişkenler camelCase, private üyeler sonda `_` ile.
-- Dosyalar snake_case, başlık koruması `#pragma once`, enum'lar `enum class`.
+- Dosya ve klasör adları snake_case (sketch klasörü ile `.ino` adı aynı), başlık koruması `#pragma once`, enum'lar `enum class`.
 
 **Sorumluluk ayrımı:**
 - `.ino`: sadece bağlamalar.
 - `hardware.h`: sadece dışarıdan bağlanan elemanlar.
-- Ayarlar header dosyalarında. Siteye özgü değerler `site_config.h`, ürün ayarları `*_config.h` içinde.
+- Ayarlar header dosyalarında. Yüklemeden önce değişenler `indoor_config.h` / `outdoor_config.h`, ünite ayarları `*_unit.h`, bina ve ürün ayarları `common/config/*_config.h` içinde.
 - Protokolün değişmez sabitleri (çerçeve boyutu, pencere 64) kodda durur, ayar dosyasında değil. Bunları değiştirmek uyumluluğu bozar.
 
 **Bellek ve dil özellikleri:**
@@ -479,9 +481,9 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 **Kod:** Tüm işlevler yazıldı: G/Ç, ağ ve aktarma, güvenlik, güç tasarrufu, denetimler.
 
 **Kurulum için gerekenler:**
-1. `Common/config/site_config.example.h` → `site_config.h` olarak kopyalanır. Apartman kimliği ve anahtar rastgele doldurulur.
-2. `OutDoor` dış üniteye, aynı `InDoor` dört iç üniteye yüklenir. Ünite başına ayar yok.
-3. Her iç ünite eşleştirilir: ünite fişe takılır (eşleşmemişse kendiliğinden eşleştirme modundadır), dış ünitede o dairenin butonuna basılır, zil çalınca eşleşme tamamdır (Karar 4).
+1. Ağ kimliği ve şifre `outdoor_config.h` ile `indoor_config.h` içinde aynı olmalı. Değiştirilirse ikisine de aynen yazılır.
+2. `outdoor` dış üniteye yüklenir. Butonların hangi daireyi çaldıracağı `outdoor/hardware.h` içinde.
+3. Her iç ünite için `indoor_config.h` içindeki `kFlatId` o dairenin numarasına ayarlanıp `indoor` yüklenir.
 4. Kart: ESP32C3 Dev Module. "Erase All Flash Before Sketch Upload" kapalı (Karar 13). Kod seri port kullanmıyor.
 
 ## 7. Senin kararını bekleyenler (donanım)

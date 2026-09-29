@@ -4,9 +4,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <optional>
-#include "../config/site_config.h"
+#include <span>
 #include "../net/frame.h"
 #include "../net/nodes.h"
 #include "../net/protocol.h"
@@ -14,15 +13,16 @@
 #include "counter_store.h"
 #include "replay_window.h"
 
-static_assert(std::any_of(std::begin(site::kApartmentKey), std::end(site::kApartmentKey), [](uint8_t byte) { return byte != 0; }),
-              "Apartman anahtarı atanmamış: site_config.h içinde kApartmentKey rastgele doldurulmalı");
+constexpr bool isAssignedKey(std::span<const uint8_t, CcmCipher::kKeySize> key) {  // Anahtar doldurulmuş mu (tamamı sıfır değil)
+  return std::ranges::any_of(key, [](uint8_t byte) { return byte != 0; });
+}
 
 class SecureChannel {                                     // Çerçeve üretir ve doğrular. Sabit sıra: ucuz denetimler → AES-CCM → tekrar penceresi. Tekrar koruması gönderen MAC'e göre (IEEE 802.15.4)
  public:
   static constexpr uint32_t    kCounterReserve = 1000;    // Sayaç rezervi: OpenThread STORE_FRAME_COUNTER_AHEAD varsayılanı
   static constexpr std::size_t kMaxPeers       = 16;      // Bir açılışta izlenebilen en fazla gönderici kart
 
-  SecureChannel(CcmCipher& cipher, CounterStore& store) : cipher_(cipher), store_(store) {}
+  SecureChannel(CcmCipher& cipher, CounterStore& store, uint32_t apartmentId) : cipher_(cipher), store_(store), apartmentId_(apartmentId) {}
 
   [[nodiscard]] bool begin(const MacAddress& mac) {       // Kartın MAC'ini alır, anahtarı ve gönderme sayacını yükler, başarısızsa false
     mac_ = mac;
@@ -34,7 +34,7 @@ class SecureChannel {                                     // Çerçeve üretir v
 
   [[nodiscard]] std::optional<frame::Bytes> seal(NodeId source, NodeId destination, MessageType type) {  // Yeni sayaçla şifreli ve imzalı çerçeve üretir
     if (!reserveCounter()) return std::nullopt;
-    const frame::Header header{kProtocolVersion, site::kApartmentId, mac_, source, destination, nextCounter_++};
+    const frame::Header header{kProtocolVersion, apartmentId_, mac_, source, destination, nextCounter_++};
     frame::Bytes bytes = frame::encodeHeader(header);
     const std::array<uint8_t, frame::kPayloadSize> plain = {static_cast<uint8_t>(type)};
     if (!cipher_.seal(frame::nonce(header), frame::header(bytes), plain, frame::payload(bytes), frame::tag(bytes))) return std::nullopt;
@@ -43,7 +43,7 @@ class SecureChannel {                                     // Çerçeve üretir v
 
   [[nodiscard]] std::optional<Message> open(const frame::Bytes& bytes) {  // Gelen çerçeveyi denetler, geçerli ve yeniyse mesajı döndürür
     const frame::Header header = frame::decodeHeader(bytes);
-    if (header.version != kProtocolVersion || header.apartmentId != site::kApartmentId) return std::nullopt;  // Başka sürüm ya da komşu apartman
+    if (header.version != kProtocolVersion || header.apartmentId != apartmentId_) return std::nullopt;  // Başka sürüm ya da komşu apartman
     if (header.sourceMac == mac_) return std::nullopt;    // Kendi yankısı
     if (header.source >= kNodeCount || !isDestination(header.destination)) return std::nullopt;  // Olmayan ünite
     if (const Peer* known = findPeer(header.sourceMac); known != nullptr && !known->window.isFresh(header.counter)) return std::nullopt;  // Aynı mesajın başka kopyası: şifre çözmeden atılır
@@ -92,6 +92,7 @@ class SecureChannel {                                     // Çerçeve üretir v
 
   CcmCipher&                    cipher_;                  // AES-CCM
   CounterStore&                 store_;                   // Sayaç kalıcı kaydı
+  uint32_t                      apartmentId_;             // Ağ (apartman) kimliği
   MacAddress                    mac_{};                   // Bu kartın MAC adresi
   uint32_t                      nextCounter_  = 0;        // Sıradaki gönderme sayacı
   uint32_t                      reservedUpTo_ = 0;        // Flash'a kaydedilmiş rezervin sonu

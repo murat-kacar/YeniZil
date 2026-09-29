@@ -35,7 +35,7 @@ class CcmCipher {                                         // AES-128-CCM şifrel
   }
 
  private:
-  std::span<const uint8_t, kKeySize> key_;                // Apartman anahtarı, site_config.h içinde
+  std::span<const uint8_t, kKeySize> key_;                // Ağ şifresi, ünitenin config dosyasında
   mbedtls_ccm_context                context_{};          // mbedTLS durumu
   bool                               ready_ = false;      // Anahtar yüklendi mi
 };
