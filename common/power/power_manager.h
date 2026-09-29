@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Arduino.h>
+#include <cstdint>
 #include "../kernel/component.h"
+
+namespace yenizil {
 
 class PowerManager : public Component {                   // İşlemci güç ayarları
  public:
@@ -13,3 +16,5 @@ class PowerManager : public Component {                   // İşlemci güç aya
  private:
   uint32_t cpuMhz_;                                       // İşlemci frekansı (MHz)
 };
+
+}  // namespace yenizil

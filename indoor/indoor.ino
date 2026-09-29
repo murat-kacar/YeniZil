@@ -1,4 +1,6 @@
-#include "indoor_unit.h"  // İç ünite nesneleri
+#include "indoor.h"  // İç ünite nesneleri
+
+using namespace yenizil;  // Proje isim alanı
 
 void setup() {
   openDoorButton.onPress([] { intercom.requestDoorOpen(); });  // Kapıyı aç butonu -> dış üniteye istek

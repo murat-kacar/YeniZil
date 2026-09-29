@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <span>
 
+namespace yenizil {
+
 static_assert(std::endian::native == std::endian::little, "Çerçeve little-endian: ESP32-C3 (RISC-V) little-endian");
 
 template <std::unsigned_integral T>
@@ -20,3 +22,5 @@ constexpr T readLe(std::span<const uint8_t, sizeof(T)> in) {          // Little-
   std::ranges::copy(in, bytes.begin());
   return std::bit_cast<T>(bytes);
 }
+
+}  // namespace yenizil

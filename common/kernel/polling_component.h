@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include "component.h"
+
+namespace yenizil {
 
 class PollingComponent : public Component {                // Sabit aralıklarla örnekleme yapan bileşen (Template Method)
  public:
@@ -21,3 +24,5 @@ class PollingComponent : public Component {                // Sabit aralıklarla
   uint32_t periodMs_;                                      // Örnekleme periyodu (ms)
   uint64_t nextPollMs_ = 0;                                // Bir sonraki örnekleme zamanı
 };
+
+}  // namespace yenizil

@@ -8,8 +8,9 @@
 #include "../kernel/byte_order.h"
 #include "protocol.h"
 
-namespace frame {                                         // Çerçeve biçimi v2: alanlar bayt bayt yazılır, struct kopyalanmaz
+namespace yenizil::frame {                                // Çerçeve biçimi v2: alanlar bayt bayt yazılır, struct kopyalanmaz
 
+inline constexpr std::size_t kMacSize     = std::tuple_size_v<MacAddress>;  // MAC adresi (bayt)
 inline constexpr std::size_t kSize        = 26;           // Çerçeve boyutu (bayt)
 inline constexpr std::size_t kHeaderSize  = 17;           // İmzalı, şifresiz başlık (bayt)
 inline constexpr std::size_t kPayloadSize = 1;            // Şifreli ve imzalı içerik: mesaj tipi (bayt)
@@ -25,7 +26,14 @@ inline constexpr std::size_t kCounterAt     = 13;         // sayaç (4)
 inline constexpr std::size_t kPayloadAt     = 17;         // mesaj tipi (1), şifreli
 inline constexpr std::size_t kTagAt         = 18;         // doğrulama etiketi (8)
 
-static_assert(kPayloadAt == kHeaderSize && kTagAt == kPayloadAt + kPayloadSize && kTagAt + kTagSize == kSize, "Alan yerleşimi çerçeve boyutuyla uyuşmuyor");
+inline constexpr std::size_t kNonceMacAt     = 0;         // nonce: gönderen MAC (6)
+inline constexpr std::size_t kNonceCounterAt = 6;         // nonce: sayaç (4)
+inline constexpr std::size_t kNonceVersionAt = 10;        // nonce: sürüm (1), kalan 2 bayt sıfır
+
+static_assert(kSourceAt == kSourceMacAt + kMacSize && kPayloadAt == kHeaderSize && kTagAt == kPayloadAt + kPayloadSize && kTagAt + kTagSize == kSize,
+              "Alan yerleşimi çerçeve boyutuyla uyuşmuyor");
+static_assert(kNonceCounterAt == kNonceMacAt + kMacSize && kNonceVersionAt == kNonceCounterAt + 4 && kNonceVersionAt < kNonceSize,
+              "Nonce yerleşimi nonce boyutuyla uyuşmuyor");
 
 using Bytes = std::array<uint8_t, kSize>;                 // Ham çerçeve
 using Nonce = std::array<uint8_t, kNonceSize>;            // AES-CCM nonce
@@ -44,7 +52,7 @@ constexpr Bytes encodeHeader(const Header& header) {      // Başlığı yazar, 
   const std::span<uint8_t, kSize> view(bytes);
   bytes[kVersionAt] = header.version;
   writeLe<uint32_t>(view.subspan<kApartmentAt, 4>(), header.apartmentId);
-  std::ranges::copy(header.sourceMac, view.subspan<kSourceMacAt, 6>().begin());
+  std::ranges::copy(header.sourceMac, view.subspan<kSourceMacAt, kMacSize>().begin());
   bytes[kSourceAt]      = header.source;
   bytes[kDestinationAt] = header.destination;
   writeLe<uint32_t>(view.subspan<kCounterAt, 4>(), header.counter);
@@ -61,16 +69,16 @@ constexpr Header decodeHeader(const Bytes& bytes) {       // Çerçeveden başl�
       .destination = bytes[kDestinationAt],
       .counter     = readLe<uint32_t>(view.subspan<kCounterAt, 4>()),
   };
-  std::ranges::copy(view.subspan<kSourceMacAt, 6>(), header.sourceMac.begin());
+  std::ranges::copy(view.subspan<kSourceMacAt, kMacSize>(), header.sourceMac.begin());
   return header;
 }
 
-constexpr Nonce nonce(const Header& header) {             // sourceMac(6) | counter(4) | version(1) | 0(2): MAC fabrikadan tekil, sayaç kalıcı; kimlikler çakışsa da nonce tekrarlanmaz
+constexpr Nonce nonce(const Header& header) {             // sourceMac | counter | version | 0: MAC fabrikadan tekil, sayaç kalıcı; kimlikler çakışsa da nonce tekrarlanmaz
   Nonce bytes{};
   const std::span<uint8_t, kNonceSize> view(bytes);
-  std::ranges::copy(header.sourceMac, view.begin());
-  writeLe<uint32_t>(view.subspan<6, 4>(), header.counter);
-  bytes[10] = header.version;
+  std::ranges::copy(header.sourceMac, view.subspan<kNonceMacAt, kMacSize>().begin());
+  writeLe<uint32_t>(view.subspan<kNonceCounterAt, 4>(), header.counter);
+  bytes[kNonceVersionAt] = header.version;
   return bytes;
 }
 
@@ -80,4 +88,4 @@ constexpr std::span<uint8_t, kPayloadSize> payload(Bytes& bytes) { return std::s
 constexpr std::span<const uint8_t, kTagSize> tag(const Bytes& bytes) { return std::span<const uint8_t, kSize>(bytes).subspan<kTagAt, kTagSize>(); }  // Doğrulama etiketi
 constexpr std::span<uint8_t, kTagSize> tag(Bytes& bytes) { return std::span<uint8_t, kSize>(bytes).subspan<kTagAt, kTagSize>(); }
 
-}  // namespace frame
+}  // namespace yenizil::frame

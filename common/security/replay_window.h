@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+namespace yenizil {
+
 class ReplayWindow {                                      // Tek kaynak için tekrar penceresi: aynı sayaç ikinci kez kabul edilmez (RFC 4303 / RFC 6347)
  public:
   static constexpr uint32_t kSize = 64;                   // Pencere boyutu: RFC 6347 varsayılanı
@@ -40,3 +42,5 @@ class ReplayWindow {                                      // Tek kaynak için te
   uint32_t highest_ = 0;                                  // Görülen en yüksek sayaç
   uint64_t seen_    = 0;                                  // Bit i: highest_ - i görüldü
 };
+
+}  // namespace yenizil

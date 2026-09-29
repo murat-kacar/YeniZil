@@ -5,6 +5,8 @@
 #include <span>
 #include "protocol.h"
 
+namespace yenizil {
+
 class BroadcastPeer : public ESP_NOW_Peer {               // ESP-NOW yayın eşi (Arduino ESP_NOW): herkese gönderir
  public:
   explicit BroadcastPeer(bool longRange) : BroadcastPeer(rateFor(longRange)) {}
@@ -29,3 +31,5 @@ class BroadcastPeer : public ESP_NOW_Peer {               // ESP-NOW yayın eşi
     return rate;
   }
 };
+
+}  // namespace yenizil

@@ -108,7 +108,7 @@ Güvenlik adımlarının sırası kritik. Pencere doğrulamadan önce ilerletili
 
 Buton denetimlerinin hepsi bir basışın sayısal sınırları: en kısa süre, en uzun süre, bekleme süresi. Dış ünitedeki daire başına zil beklemesi ile iç ünitedeki kapı isteği beklemesi aynı ihtiyaç.
 
-**Karar:** Hepsi `PressConfig` yapısında. Ayrı kural sınıfları yok (Rule of Three), aynı mekanizma iki ünitede de kullanılıyor (DRY).
+**Karar:** Hepsi `PressSettings` yapısında. Ayrı kural sınıfları yok (Rule of Three), aynı mekanizma iki ünitede de kullanılıyor (DRY).
 
 ### Karar 8 — 64-bit zaman
 
@@ -133,7 +133,7 @@ Tek çerçevenin bir kat geçişinde ulaşma oranı %90 ise, alıcının 1 pence
 
 Kimlik ve şifre beş ünitede aynı olmalı. Dosyalar git'te. Depo herkese açık bir yere konursa şifre değiştirilip üniteler yeniden yüklenmeli. Kimlik ya da şifre sıfır bırakılırsa, daire numarası aralık dışındaysa program derlenmiyor.
 
-Dış ünitenin ağdaki numarası (0) ve ünitenin diğer ayarları (darbe süreleri, basış kuralları) `outdoor_unit.h` / `indoor_unit.h` içinde. Daire sayısı, kanal ve TX gücü gibi bina geneli ayarlar `common/config` altında.
+Dış ünitenin ağdaki numarası (0) ve ünitenin diğer ayarları (darbe süreleri, basış kuralları) `outdoor.h` / `indoor.h` içinde. Daire sayısı, kanal ve TX gücü gibi bina geneli ayarlar `common/config` altında.
 
 ### Karar 12 — AES-128-CCM, 8 bayt etiket
 
@@ -145,7 +145,7 @@ Gönderici her mesajda sayacı flash'a yazmıyor. 1000'lik bir rezervin sonunu y
 
 ### Karar 14 — Radyo ayarları radyonun işi
 
-TX gücü, Long Range, kanal, uyanma aralığı ve penceresi `RadioConfig` içinde, `EspNowRadio` tarafından uygulanıyor. `PowerManager` sadece CPU frekansını yönetiyor. Böylece bileşenler arasında başlatma sırası bağımlılığı kalmıyor.
+TX gücü, Long Range, kanal, uyanma aralığı ve penceresi `RadioSettings` içinde, `EspNowRadio` tarafından uygulanıyor. Tekrarlı gönderimin ayarları `BurstSettings` içinde, `BurstSender` tarafından uygulanıyor. `PowerManager` sadece CPU frekansını yönetiyor. Böylece bileşenler arasında başlatma sırası bağımlılığı kalmıyor.
 
 ### Karar 15 — Watchdog
 
@@ -175,13 +175,14 @@ Flooding ağında sürekli bir bağlantı yok, mesaj sadece olay olunca gidiyor.
 ┌─────────────────────────────────────────────────────────┐
 │ Sketch     *.ino               bağlamalar: aksiyon → sonuç │
 ├─────────────────────────────────────────────────────────┤
-│ Unit       outdoor_unit.h      composition root:          │
-│            indoor_unit.h       nesneleri kurar, ayar verir │
+│ Unit       outdoor.h           composition root:          │
+│            indoor.h            nesneleri kurar, ayar verir │
 ├─────────────────────────────────────────────────────────┤
-│ App        Intercom · Bell · DoorOpener      alan dili    │
+│ App        Intercom (ağı kurar) · Bell · DoorOpener       │
+│            LinkMonitor                       alan dili    │
 ├─────────────────────────────────────────────────────────┤
-│ Services   FloodRouter · SecureChannel                    │
-│            ButtonGroup · Button · PulseOutput             │
+│ Services   FloodRouter · BurstSender · SecureChannel      │
+│            ButtonGroup · Button · PulseOutput · IndicatorLed │
 ├─────────────────────────────────────────────────────────┤
 │ Platform   EspNowRadio · BroadcastPeer · CcmCipher        │
 │            CounterStore · PowerManager                    │
@@ -190,13 +191,14 @@ Flooding ağında sürekli bir bağlantı yok, mesaj sadece olay olunca gidiyor.
 │ Core       PressDetector · ReplayWindow · frame · protocol │
 │            (saf C++: Arduino/IDF include etmez)            │
 ├─────────────────────────────────────────────────────────┤
-│ Kernel     EventLoop · Component · monotonicMs()          │
+│ Kernel     EventLoop · Component · Handler · monotonicMs() │
 └─────────────────────────────────────────────────────────┘
 ```
 
 Kurallar:
 - Bağımlılık sadece aşağı doğru olabilir.
-- Config her katmana değer verir ama hiçbir katmana bağımlı değildir.
+- Config her katmana değer verir ama hiçbir katmana bağımlı değildir. Ayar tipleri de (`RadioSettings`, `BurstSettings`, `PressSettings`) config katmanında, `*_settings.h` dosyalarında.
+- Bütün kod `yenizil` isim alanında. Ayarlar `yenizil::config`, kablolama `yenizil::pins`, kart bilgisi `yenizil::board`, çerçeve biçimi `yenizil::frame` altında.
 - Core katmanındaki dosyalar platforma dokunmaz.
 
 ### 3.2 Klasör yapısı (özelliğe göre paketleme)
@@ -205,24 +207,26 @@ Kurallar:
 YeniZil/
 ├── outdoor/
 │   ├── outdoor.ino           bağlamalar
-│   ├── outdoor_unit.h        composition root + ünite ayarları
+│   ├── outdoor.h             composition root + ünite ayarları
 │   ├── hardware.h            kablolama: buton ve röle pinleri
 │   └── outdoor_config.h      yüklemeden önce: ağ kimliği, şifre
 ├── indoor/
 │   ├── indoor.ino
-│   ├── indoor_unit.h
+│   ├── indoor.h
 │   ├── hardware.h
 │   └── indoor_config.h       yüklemeden önce: ağ kimliği, şifre, daire numarası
 ├── common/
 │   ├── config/
 │   │   ├── building_config.h       daire sayısı
+│   │   ├── radio_settings.h        RadioSettings, BurstSettings tipleri
 │   │   ├── radio_config.h          kanal, güç, Long Range, pencere, aralık, burst
+│   │   ├── press_settings.h        PressSettings tipi
 │   │   ├── input_config.h          basış sınırları
 │   │   ├── link_config.h           heartbeat aralığı, bağlantı zaman aşımı
 │   │   └── power_config.h          CPU frekansı
-│   ├── kernel/   clock.h · component.h · polling_component.h · periodic_timer.h · event_loop.h · byte_order.h · static_checks.h
-│   ├── io/       board_pins.h · digital_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h · indicator_led.h
-│   ├── net/      protocol.h · frame.h · nodes.h · broadcast_peer.h · esp_now_radio.h · flood_router.h
+│   ├── kernel/   callback.h · clock.h · component.h · polling_component.h · periodic_timer.h · event_loop.h · byte_order.h · static_checks.h
+│   ├── io/       board_pins.h · digital_pin.h · button_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h · indicator_led.h
+│   ├── net/      protocol.h · frame.h · nodes.h · broadcast_peer.h · esp_now_radio.h · burst_sender.h · flood_router.h
 │   ├── security/ ccm_cipher.h · replay_window.h · counter_store.h · secure_channel.h
 │   ├── power/    power_manager.h
 │   └── app/      intercom.h · bell.h · door_opener.h · link_monitor.h
@@ -234,44 +238,50 @@ YeniZil/
 
 | Sınıf | Tür | Sorumluluk | Public arayüz |
 |---|---|---|---|
+| `Handler<Args...>` / `callIfSet()` | kernel | Olay işleyicisi tipi (düz fonksiyon işaretçisi) ve "bağlıysa çağır" yardımcısı | `callIfSet(handler, args...)` |
 | `monotonicMs()` | kernel | 64-bit monoton zaman (ms), `esp_timer` | `uint64_t monotonicMs()` |
 | `Component` | soyut | Güncellenen her şeyin ortak arayüzü. Constructor'da kendini zincire ekler (intrusive list, heap yok). | `begin()`, `update(nowMs)`, `nextDeadlineMs()` |
 | `PollingComponent` | soyut | Sabit periyotla örnekleme (Template Method). `Button` ve `ButtonGroup` ortak zamanlamayı buradan alır. | `poll(nowMs)` (korumalı) |
-| `PeriodicTimer` | kernel | Sabit aralıkla olay, ilk olay açılışta (`PollingComponent`) | `onTick(void(*)())` |
-| `EventLoop` | kernel | Bileşenleri başlatır ve günceller. En yakın zamana ya da bildirime kadar bloklanır (≤ 1 sn). Watchdog'u açar. | `begin()`, `update()`, `notify()` |
+| `PeriodicTimer` | kernel | Sabit aralıkla olay, ilk olay açılışta (`PollingComponent`) | `onTick(Handler<>)` |
+| `EventLoop` | kernel | Bileşenleri başlatır ve günceller. En yakın zamana ya da bildirime kadar bloklanır (≤ 1 sn). Watchdog'u açar. Tek örneği ünite dosyasında kurulur, radyoya constructor'dan verilir. | `begin()`, `update()`, `notify()` |
 | `writeLe` / `readLe` | kernel | Tamsayıyı little-endian yazar/okur (`std::bit_cast`) | — |
 | `allUnique()` | kernel | Tabloda tekrar var mı, derleme zamanında | `consteval bool allUnique(items, key)` |
+| `setupInput()` / `isActive()` / `setupOutput()` / `writeOutput()` | io | Aktif seviyeye göre pin okuma ve yazma. Çıkış titremeden pasif açılır. | — |
 | `board::isSafeGpio()` | io | Super Mini'de açılışı etkilemeyen pinler | `constexpr bool isSafeGpio(pin)` |
-| `PressDetector` | core | Seviye ve zamandan geçerli basışı çıkarır: süre sınırları, bekleme süresi, açılışta basılı butonu bırakılana kadar yok sayma | `bool update(pressed, nowMs, config)` |
-| `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(void(*)())` |
-| `ButtonGroup<N>` | servis | Kimlikli N buton, olay kimlikle gelir | `onPress(void(*)(uint8_t))` |
+| `PressDetector` | core | Seviye ve zamandan geçerli basışı çıkarır: süre sınırları, bekleme süresi, açılışta basılı butonu bırakılana kadar yok sayma | `bool update(pressed, nowMs, settings)` |
+| `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(Handler<>)` |
+| `ButtonGroup<N>` | servis | Kimlikli N buton (`ButtonPin` tablosu), olay kimlikle gelir | `onPress(Handler<uint8_t>)` |
 | `PulseOutput` | servis | Belirli süre aktif kalan çıkış. Aktifken gelen tetik yok sayılır. Açılışta titremeden pasife çekilir. | `activate()` |
 | `IndicatorLed` | servis | Sürekli yanan ya da yanıp sönen LED, pini sadece durum değişince yazar | `turnOn()`, `blink()` |
 | `LinkMonitor` | app | Süre içinde heartbeat geldiyse bağlı, gelmezse koptu. Açılışta kopuk. | `refresh()`, `onConnected()`, `onLost()` |
 | `Bell` / `DoorOpener` | app | Alan dilinde eylem (`PulseOutput` içerir) | `ring()` / `open()` |
-| `protocol` | core | `NodeId`, `MacAddress`, `MessageType`, `Message`, sürüm | `isKnownMessageType()` |
+| `protocol` | core | `NodeId`, `MacAddress`, `MessageType`, `Message`, sürüm. Hangi tipin herkese gittiği burada. | `isKnownMessageType()`, `isBroadcast()`, `matchesAddressing()` |
 | `frame` | core | Çerçeveyi bayt bayt yazar ve okur, nonce üretir, alanlara `std::span` verir | `encodeHeader()`, `decodeHeader()`, `nonce()`, `header()`, `payload()`, `tag()` |
-| `nodes` | denetim | Ünite sayısı, daire kimliği ve apartman kimliği denetimleri | `kNodeCount`, `isFlatId()` |
+| `nodes` | denetim | Ünite sayısı, daire numarası ve hedef denetimleri | `kNodeCount`, `isFlatId()`, `isDestination()` |
 | `BroadcastPeer` | platform | Arduino `ESP_NOW_Peer`'den türeyen yayın eşi, Long Range hızıyla | `begin()`, `send(bytes)` |
-| `EspNowRadio` | platform | Wi-Fi/ESP-NOW başlatma, kanal, TX gücü, Long Range, modem uykusu ve uyanma penceresi, burst gönderim, alma kuyruğu | `broadcast(bytes)`, `relay(bytes)`, `bool receive(frame)`, `ownMac()` |
+| `EspNowRadio` | platform | Wi-Fi/ESP-NOW başlatma, kanal, TX gücü, Long Range, modem uykusu ve uyanma penceresi, tek kopya gönderim, alma kuyruğu | `send(bytes)`, `bool receive(frame)`, `ownMac()` |
+| `BurstSender` | servis | Çerçeveyi süre boyunca aralıklarla tekrar gönderir. Aktarmada kısa rastgele bekleme. | `send(bytes)`, `relay(bytes)` |
 | `CcmCipher` | platform | AES-128-CCM (mbedTLS) | `bool begin()`, `bool seal(...)`, `bool open(...)` |
 | `ReplayWindow` | core | 64'lük kayan pencere | `isFresh()`, `markSeen()`, `restore()` |
 | `CounterStore` | platform | NVS (`Preferences`): gönderme sayacı rezervi, gönderen MAC başına son eylem sayacı | `begin()`, `loadTxReserve()`, `saveTxReserve()`, `loadRxCounter()`, `saveRxCounter()` |
 | `SecureChannel` | servis | Sabit sıra (3.6). Giden çerçeveyi şifreler ve imzalar. Tekrar penceresi gönderen MAC başına. | `bool begin(mac)`, `optional<Bytes> seal(src, dst, type)`, `optional<Message> open(bytes)`, `bool commit(message)` |
-| `FloodRouter` | servis | Gelen çerçeveyi süzer, kendine geleni kalıcı kayıttan sonra teslim eder, gerisini **değiştirmeden** aktarır | `send(dst, type)`, `on(type, void(*)())` |
-| `Intercom` | app (Facade) | Protokolü gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `broadcastHeartbeat()`, `onRing()`, `onDoorOpenRequest()`, `onHeartbeat()` |
+| `FloodRouter` | servis | Gelen çerçeveyi süzer, kendine geleni kalıcı kayıttan sonra teslim eder, herkese gideni teslim edip aktarır, gerisini **değiştirmeden** aktarır | `send(dst, type)`, `on(type, Handler<>)` |
+| `NetworkSettings` | app | Ağ ayarları: radyo, tekrar, ağ kimliği, şifre, ünite numarası | `isAssigned(settings)` |
+| `Intercom` | app (Facade) | Ağ katmanını (radyo, tekrar, şifreleme, sayaç kaydı, güvenli kanal, yönlendirici) kurar ve gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `broadcastHeartbeat()`, `onRing()`, `onDoorOpenRequest()`, `onHeartbeat()` |
 | `PowerManager` | platform | CPU frekansı | `begin()` |
 
 **Tasarım kuralları:**
 - Constructor'lar sadece ayarları saklar, donanıma dokunmaz. Donanım `begin()` içinde başlatılır, çünkü global nesnelerin constructor'ları Arduino hazır olmadan çalışır.
-- Bağımlılıklar constructor'dan referansla verilir (dependency injection). Nesneleri composition root kurar.
+- Bağımlılıklar constructor'dan referansla verilir (dependency injection). Global nesneye doğrudan erişen sınıf yok. Nesneleri composition root (`indoor.h`, `outdoor.h`) kurar. Ağ katmanını `Intercom` kendi içinde kurar, ünite sadece `NetworkSettings` verir.
 - Sanal fonksiyon sadece `Component` hiyerarşisinde ve Arduino'nun `ESP_NOW_Peer` sınıfında var. Tek uygulaması olan şey için arayüz yazılmıyor (YAGNI).
 - Kalıtım yerine composition tercih ediliyor: `Bell`, bir `PulseOutput` **içeriyor**, ondan türemiyor.
 
 ### 3.4 Sketch'ler
 
 ```cpp
-#include "outdoor_unit.h"  // Dış ünite nesneleri
+#include "outdoor.h"  // Dış ünite nesneleri
+
+using namespace yenizil;  // Proje isim alanı
 
 void setup() {
   flatButtons.onPress([](NodeId flat) { intercom.ringFlat(flat); });  // N. daire butonu -> N. dairenin zili
@@ -284,7 +294,9 @@ void loop() { eventLoop.update(); }
 ```
 
 ```cpp
-#include "indoor_unit.h"  // İç ünite nesneleri
+#include "indoor.h"  // İç ünite nesneleri
+
+using namespace yenizil;  // Proje isim alanı
 
 void setup() {
   openDoorButton.onPress([] { intercom.requestDoorOpen(); });  // Kapıyı aç butonu -> dış üniteye istek
@@ -309,7 +321,7 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 → ButtonGroup → intercom.ringFlat(3)
 → FloodRouter.send(3, kRingBell)
 → SecureChannel.seal: sayaç+1, AES-CCM
-→ EspNowRadio: 420 ms burst, 10 ms'de bir ─────────────────→ pencere yakalar
+→ BurstSender: 420 ms burst, 10 ms'de bir ─────────────────→ pencere yakalar
                                                               denetle, doğrula
                                                               hedef ≠ ben → aktar ────→ …
                                                                                         …aktar ─────→ doğrula
@@ -343,7 +355,7 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 4. Gönderen MAC'in tekrar penceresine salt okunur bak. Görülmüş kopyayı şifre çözmeden at (Karar 16).
 5. AES-CCM ile doğrula ve şifreyi çöz. Geçmezse at.
 6. Gönderen MAC için pencere yoksa şimdi aç ve kayıtlı sayacı NVS'den yükle. Yer sadece doğrulanmış göndericiye ayrılıyor, sahte MAC'ler tabloyu dolduramıyor. Pencereyi ilerlet.
-7. Mesaj tipi tanımlı mı?
+7. Mesaj tipi tanımlı mı, tip ile hedef uyuşuyor mu (herkese giden tip sadece herkese, diğerleri tek üniteye)?
 8. Hedef herkesse (heartbeat) aktar ve teslim et, kalıcı kayıt yok (Karar 18).
 9. Hedef bensem sayacı NVS'ye yaz, yazılamazsa at, sonra eylemi çalıştır. Değilsem çerçeveyi olduğu gibi aktar.
 
@@ -362,13 +374,13 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | En kısa basış | 50 ms | input_config.h | Sıçrama < 10 ms (Ganssle) · EFT patlaması 15 ms (IEC 61000-4-4) · insan basışı ≈ 80–110 ms |
 | Örnekleme periyodu | 5 ms | input_config.h | Ganssle: 1–5 ms |
 | En uzun basış | 30 sn | input_config.h | HMI "basılı tut" zaman aşımı pratiği ≥ 30 sn. Tahmin, sahada gözden geçirilebilir. |
-| Kapı darbesi | 1,5 sn (1–2 sn) | outdoor_unit.h | Gereksinim |
-| Zil darbesi | 1,5 sn (1–2 sn) | indoor_unit.h | Gereksinim |
-| Zil bekleme süresi | 3 sn | outdoor_unit.h | 1,5 sn darbe + 1,5 sn sessizlik |
-| Kapı isteği bekleme süresi | 2 sn | indoor_unit.h | Mühendislik tercihi |
+| Kapı darbesi | 1,5 sn (1–2 sn) | outdoor.h | Gereksinim |
+| Zil darbesi | 1,5 sn (1–2 sn) | indoor.h | Gereksinim |
+| Zil bekleme süresi | 3 sn | outdoor.h | 1,5 sn darbe + 1,5 sn sessizlik |
+| Kapı isteği bekleme süresi | 2 sn | indoor.h | Mühendislik tercihi |
 | Heartbeat aralığı | 30 sn (≥ 10 sn) | link_config.h | Her yayın tüm üniteleri 420 ms gönderime sokuyor |
 | Bağlantı zaman aşımı | 95 sn (türetilmiş) | link_config.h | 3 × aralık + 5 sn: tek kaçırılan yayın LED'i düşürmez |
-| LED yanıp sönme | 0,5 sn yanık / 0,5 sn sönük | indoor_unit.h | Belirgin, göz yormayan hız |
+| LED yanıp sönme | 0,5 sn yanık / 0,5 sn sönük | indoor.h | Belirgin, göz yormayan hız |
 | Uyanma aralığı | 200 ms | radio_config.h | Espressif: "100'ün katları önerilir" (`esp_wifi.h`) · 4 kat en kötü 0,8 sn |
 | Uyanma penceresi | 20 ms | radio_config.h | %10 hedefi · burst periyodunun 2 katı |
 | Burst periyodu | 10 ms | radio_config.h | Pencere başına ≥ 2 kopya |
@@ -392,11 +404,14 @@ Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örnekler: pence
 - Sabitler: `kPascalCase`, namespace içinde `inline constexpr`. `#define` kullanılmıyor.
 - Tipler PascalCase, fonksiyon ve değişkenler camelCase, private üyeler sonda `_` ile.
 - Dosya ve klasör adları snake_case (sketch klasörü ile `.ino` adı aynı), başlık koruması `#pragma once`, enum'lar `enum class`.
+- Bütün kod `yenizil` isim alanında. `using namespace yenizil;` sadece `.ino` dosyasında (kaynak dosya), başlık dosyalarında yok.
+- Standart C++ başlıkları kullanılır: `<stdint.h>` yerine `<cstdint>`.
+- Çerçeve ve anahtar düzenindeki sayılar adlandırılmış sabittir, konumlar `static_assert` ile birbirine bağlıdır.
 
 **Sorumluluk ayrımı:**
 - `.ino`: sadece bağlamalar.
 - `hardware.h`: sadece dışarıdan bağlanan elemanlar.
-- Ayarlar header dosyalarında. Yüklemeden önce değişenler `indoor_config.h` / `outdoor_config.h`, ünite ayarları `*_unit.h`, bina ve ürün ayarları `common/config/*_config.h` içinde.
+- Ayarlar header dosyalarında. Yüklemeden önce değişenler `indoor_config.h` / `outdoor_config.h`, ünite ayarları `indoor.h` / `outdoor.h`, bina ve ürün ayarları `common/config/*_config.h` içinde.
 - Protokolün değişmez sabitleri (çerçeve boyutu, pencere 64) kodda durur, ayar dosyasında değil. Bunları değiştirmek uyumluluğu bozar.
 
 **Bellek ve dil özellikleri:**

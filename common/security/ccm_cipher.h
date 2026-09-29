@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <span>
 
+namespace yenizil {
+
 class CcmCipher {                                         // AES-128-CCM şifreleme ve doğrulama: mbedTLS, C3'te donanım AES ile
  public:
   static constexpr std::size_t kKeySize = 16;             // Anahtar boyutu (bayt): AES-128
@@ -39,3 +41,5 @@ class CcmCipher {                                         // AES-128-CCM şifrel
   mbedtls_ccm_context                context_{};          // mbedTLS durumu
   bool                               ready_ = false;      // Anahtar yüklendi mi
 };
+
+}  // namespace yenizil

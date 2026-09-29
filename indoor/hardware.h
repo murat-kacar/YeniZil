@@ -2,11 +2,12 @@
 
 #include <Arduino.h>
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include "../common/io/board_pins.h"
 #include "../common/kernel/static_checks.h"
 
-namespace pins {                                          // İç ünite kablolaması
+namespace yenizil::pins {                                 // İç ünite kablolaması
 
 inline constexpr uint8_t kOpenDoorButton = 10;            // Kapıyı aç butonu: pin - buton - GND
 inline constexpr uint8_t kButtonActive   = LOW;           // Buton basılıyken LOW okunur (dahili pull-up)
@@ -20,4 +21,4 @@ inline constexpr uint8_t kUsedPins[] = {kOpenDoorButton, kBell, kLinkLed};  // K
 static_assert(allUnique(kUsedPins, [](uint8_t pin) { return pin; }), "Aynı pine iki eleman bağlanamaz");
 static_assert(std::all_of(std::begin(kUsedPins), std::end(kUsedPins), board::isSafeGpio), "Pin strapping/USB/UART pinine denk geliyor");
 
-}  // namespace pins
+}  // namespace yenizil::pins

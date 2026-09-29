@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include "../net/frame.h"
 #include "../net/nodes.h"
 #include "../net/protocol.h"
@@ -13,9 +12,7 @@
 #include "counter_store.h"
 #include "replay_window.h"
 
-constexpr bool isAssignedKey(std::span<const uint8_t, CcmCipher::kKeySize> key) {  // Anahtar doldurulmuş mu (tamamı sıfır değil)
-  return std::ranges::any_of(key, [](uint8_t byte) { return byte != 0; });
-}
+namespace yenizil {
 
 class SecureChannel {                                     // Çerçeve üretir ve doğrular. Sabit sıra: ucuz denetimler → AES-CCM → tekrar penceresi. Tekrar koruması gönderen MAC'e göre (IEEE 802.15.4)
  public:
@@ -98,3 +95,5 @@ class SecureChannel {                                     // Çerçeve üretir v
   uint32_t                      reservedUpTo_ = 0;        // Flash'a kaydedilmiş rezervin sonu
   std::array<Peer, kMaxPeers>   peers_{};                 // Gönderici başına tekrar penceresi
 };
+
+}  // namespace yenizil

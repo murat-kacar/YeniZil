@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include "../io/pulse_output.h"
+
+namespace yenizil {
 
 class Bell {                                              // Zil
  public:
@@ -11,3 +14,5 @@ class Bell {                                              // Zil
  private:
   PulseOutput output_;                                    // Zil tetik çıkışı
 };
+
+}  // namespace yenizil

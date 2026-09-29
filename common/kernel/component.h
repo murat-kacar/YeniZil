@@ -1,8 +1,10 @@
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
-inline constexpr uint64_t kNoDeadlineMs = UINT64_MAX;  // Zamanlanmış iş yok
+namespace yenizil {
+
+inline constexpr uint64_t kNoDeadlineMs = UINT64_MAX;                 // Zamanlanmış iş yok
 
 class Component {                                                     // Olay döngüsünün çalıştırdığı bileşen
  public:
@@ -29,3 +31,5 @@ class Component {                                                     // Olay d�
   static inline Component* tail_ = nullptr;                           // Son bileşen
   Component* next_ = nullptr;                                         // Sonraki bileşen
 };
+
+}  // namespace yenizil

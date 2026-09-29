@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include "../io/pulse_output.h"
+
+namespace yenizil {
 
 class DoorOpener {                                        // Kapı açıcı
  public:
@@ -11,3 +14,5 @@ class DoorOpener {                                        // Kapı açıcı
  private:
   PulseOutput output_;                                    // Kapı rölesi tetik çıkışı
 };
+
+}  // namespace yenizil

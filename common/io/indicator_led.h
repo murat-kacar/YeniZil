@@ -1,8 +1,11 @@
 #pragma once
 
-#include <Arduino.h>
+#include <cstdint>
 #include "../kernel/clock.h"
 #include "../kernel/component.h"
+#include "digital_pin.h"
+
+namespace yenizil {
 
 class IndicatorLed : public Component {                   // Gösterge LED'i: sürekli yanar ya da yanıp söner
  public:
@@ -10,8 +13,8 @@ class IndicatorLed : public Component {                   // Gösterge LED'i: s�
       : pin_(pin), activeLevel_(activeLevel), blinkHalfPeriodMs_(blinkHalfPeriodMs) {}
 
   void begin() override {
-    pinMode(pin_, OUTPUT);
-    write();                                              // begin'den önce seçilmiş durum da uygulanır
+    setupOutput(pin_, activeLevel_);
+    writeOutput(pin_, activeLevel_, lit_);                // begin'den önce seçilmiş durum da uygulanır
   }
 
   void turnOn() {                                         // Sürekli yanar
@@ -38,10 +41,8 @@ class IndicatorLed : public Component {                   // Gösterge LED'i: s�
   void set(bool lit) {                                    // Durum değiştiyse pini yazar
     if (lit == lit_) return;
     lit_ = lit;
-    write();
+    writeOutput(pin_, activeLevel_, lit_);
   }
-
-  void write() const { digitalWrite(pin_, lit_ ? activeLevel_ : (activeLevel_ == HIGH ? LOW : HIGH)); }  // Durumu pine yazar
 
   uint8_t  pin_;                                          // LED pini
   uint8_t  activeLevel_;                                  // LED'i yakan seviye
@@ -50,3 +51,5 @@ class IndicatorLed : public Component {                   // Gösterge LED'i: s�
   bool     lit_          = false;                         // Şu an yanık mı
   uint64_t nextToggleMs_ = 0;                             // Sıradaki değişimin anı
 };
+
+}  // namespace yenizil

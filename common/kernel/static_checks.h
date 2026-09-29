@@ -2,6 +2,8 @@
 
 #include <cstddef>
 
+namespace yenizil {
+
 template <typename T, std::size_t N, typename Key>
 consteval bool allUnique(const T (&items)[N], Key key) {  // Tablodaki anahtarlar tekrarsız mı, derleme zamanında
   for (std::size_t i = 0; i < N; ++i)
@@ -9,3 +11,5 @@ consteval bool allUnique(const T (&items)[N], Key key) {  // Tablodaki anahtarla
       if (key(items[i]) == key(items[j])) return false;
   return true;
 }
+
+}  // namespace yenizil

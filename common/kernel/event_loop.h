@@ -1,13 +1,16 @@
 #pragma once
 
 #include <Arduino.h>
-#include <algorithm>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <algorithm>
+#include <cstdint>
 #include "clock.h"
 #include "component.h"
 
-class EventLoop {                                                        // Bileşenleri çalıştıran olay döngüsü
+namespace yenizil {
+
+class EventLoop {                                                        // Bileşenleri çalıştıran olay döngüsü, tek örneği ünite dosyasında
  public:
   static constexpr uint32_t kMaxWaitMs = 1000;                           // En uzun bekleme (ms), watchdog süresinin (5 sn) altında
 
@@ -39,4 +42,4 @@ class EventLoop {                                                        // Bile
   TaskHandle_t task_ = nullptr;                                          // loop() görevinin tanıtıcısı
 };
 
-inline EventLoop eventLoop;                                              // Tek olay döngüsü
+}  // namespace yenizil

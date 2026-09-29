@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace yenizil {
+
 using NodeId     = uint8_t;                               // Ünite kimliği (mantıksal adres): 0 dış ünite, daireler 1..kFlatCount
 using MacAddress = std::array<uint8_t, 6>;                // MAC adresi
 
@@ -12,8 +14,8 @@ inline constexpr NodeId  kAllUnitsId      = 0xFF;         // Herkese: tüm ünit
 inline constexpr uint8_t kProtocolVersion = 2;            // Çerçeve biçimi sürümü
 
 enum class MessageType : uint8_t {                        // Mesaj tipi
-  kRingBell = 1,                                          // Zil çal
-  kOpenDoor = 2,                                          // Kapıyı aç
+  kRingBell  = 1,                                         // Zil çal
+  kOpenDoor  = 2,                                         // Kapıyı aç
   kHeartbeat = 3,                                         // Dış ünite "buradayım" yayını, herkese
 };
 
@@ -23,6 +25,14 @@ constexpr bool isKnownMessageType(uint8_t value) {        // Değer tanımlı bi
   return value >= 1 && value < kMessageTypeCount;
 }
 
+constexpr bool isBroadcast(MessageType type) {            // Tip herkese mi gider: eylem değildir, kalıcı kayıt gerektirmez
+  return type == MessageType::kHeartbeat;
+}
+
+constexpr bool matchesAddressing(MessageType type, NodeId destination) {  // Herkese giden tip sadece herkese, diğerleri sadece tek üniteye gider
+  return isBroadcast(type) == (destination == kAllUnitsId);
+}
+
 struct Message {                                          // Doğrulanmış mesaj
   MacAddress  sourceMac;                                  // Gönderen kartın MAC adresi: tekrar koruması buna göre
   NodeId      source;                                     // Gönderen ünite
@@ -30,3 +40,5 @@ struct Message {                                          // Doğrulanmış mesa
   uint32_t    counter;                                    // Gönderenin sayacı
   MessageType type;                                       // Mesaj tipi
 };
+
+}  // namespace yenizil

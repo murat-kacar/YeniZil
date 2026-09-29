@@ -1,16 +1,13 @@
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
+#include "../config/press_settings.h"
 
-struct PressConfig {                                      // Basış kuralları
-  uint32_t minMs;                                         // En kısa geçerli basış (ms), altı parazit
-  uint32_t maxMs;                                         // En uzun geçerli basış (ms), üstü kısa devre
-  uint32_t cooldownMs;                                    // Kabul edilen basıştan sonra yeni basış için bekleme (ms)
-};
+namespace yenizil {
 
 class PressDetector {                                     // Seviye ve zamandan geçerli basışı çıkarır, karar bırakınca verilir
  public:
-  [[nodiscard]] constexpr bool update(bool pressed, uint64_t nowMs, const PressConfig& config) {  // Geçerli bir basış bittiyse true
+  [[nodiscard]] constexpr bool update(bool pressed, uint64_t nowMs, const PressSettings& settings) {  // Geçerli bir basış bittiyse true
     if (!armed_) {                                        // Açılışta basılı gelen buton bırakılana kadar yok sayılır
       armed_ = !pressed;
       return false;
@@ -21,13 +18,13 @@ class PressDetector {                                     // Seviye ve zamandan 
       pressStartMs_ = nowMs;
       return false;
     }
-    return accept(nowMs - pressStartMs_, nowMs, config);
+    return accept(nowMs - pressStartMs_, nowMs, settings);
   }
 
  private:
-  constexpr bool accept(uint64_t durationMs, uint64_t nowMs, const PressConfig& config) {  // Süre ve bekleme kurallarını uygular
-    if (durationMs < config.minMs || durationMs > config.maxMs) return false;
-    if (hasAccepted_ && nowMs - lastAcceptMs_ < config.cooldownMs) return false;
+  constexpr bool accept(uint64_t durationMs, uint64_t nowMs, const PressSettings& settings) {  // Süre ve bekleme kurallarını uygular
+    if (durationMs < settings.minMs || durationMs > settings.maxMs) return false;
+    if (hasAccepted_ && nowMs - lastAcceptMs_ < settings.cooldownMs) return false;
     hasAccepted_  = true;
     lastAcceptMs_ = nowMs;
     return true;
@@ -39,3 +36,5 @@ class PressDetector {                                     // Seviye ve zamandan 
   uint64_t pressStartMs_ = 0;                             // Basışın başladığı an
   uint64_t lastAcceptMs_ = 0;                             // Son kabul edilen basışın bittiği an
 };
+
+}  // namespace yenizil

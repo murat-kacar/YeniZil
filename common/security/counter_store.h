@@ -7,6 +7,8 @@
 #include <optional>
 #include "../net/protocol.h"
 
+namespace yenizil {
+
 class CounterStore {                                      // Sayaçların flash'ta (NVS) kalıcı kaydı: Preferences
  public:
   [[nodiscard]] bool begin() { return preferences_.begin(kNamespace, false); }  // NVS ad alanını açar, başarısızsa false
@@ -28,14 +30,18 @@ class CounterStore {                                      // Sayaçların flash'
   }
 
  private:
-  using RxKey = std::array<char, 15>;                     // "rx" + MAC'in 12 onaltılık hanesi + '\0', NVS sınırı 15 karakter
+  static constexpr std::size_t kRxPrefixSize = 2;         // "rx" ön eki
+  static constexpr std::size_t kNvsKeyMax    = 15;        // NVS anahtarının en fazla karakter sayısı
+
+  using RxKey = std::array<char, kRxPrefixSize + 2 * std::tuple_size_v<MacAddress> + 1>;  // "rx" + MAC'in onaltılık haneleri + '\0'
+  static_assert(std::tuple_size_v<RxKey> - 1 <= kNvsKeyMax, "NVS anahtarı en fazla 15 karakter olabilir");
 
   static constexpr RxKey rxKey(const MacAddress& source) {  // Gönderen kart başına NVS anahtarı
     constexpr char kHex[] = "0123456789abcdef";
     RxKey key{'r', 'x'};
     for (std::size_t i = 0; i < source.size(); ++i) {
-      key[2 + 2 * i] = kHex[source[i] >> 4];
-      key[3 + 2 * i] = kHex[source[i] & 0x0F];
+      key[kRxPrefixSize + 2 * i]     = kHex[source[i] >> 4];
+      key[kRxPrefixSize + 2 * i + 1] = kHex[source[i] & 0x0F];
     }
     return key;
   }
@@ -45,3 +51,5 @@ class CounterStore {                                      // Sayaçların flash'
 
   Preferences preferences_;                               // NVS erişimi
 };
+
+}  // namespace yenizil

@@ -2,12 +2,13 @@
 
 #include <Arduino.h>
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include "../common/io/board_pins.h"
-#include "../common/io/button_group.h"
+#include "../common/io/button_pin.h"
 #include "../common/kernel/static_checks.h"
 
-namespace pins {                                          // Dış ünite kablolaması
+namespace yenizil::pins {                                 // Dış ünite kablolaması
 
 inline constexpr ButtonPin kFlatButtons[] = {             // Zil butonları {daire, pin}: pin - buton - GND
     {1, 3},
@@ -25,4 +26,4 @@ static_assert(std::none_of(std::begin(kFlatButtons), std::end(kFlatButtons), [](
 static_assert(std::all_of(std::begin(kFlatButtons), std::end(kFlatButtons), [](const ButtonPin& button) { return board::isSafeGpio(button.pin); }), "Buton pini strapping/USB/UART pinine denk geliyor");
 static_assert(board::isSafeGpio(kDoorRelay), "Röle pini strapping/USB/UART pinine denk geliyor");
 
-}  // namespace pins
+}  // namespace yenizil::pins
