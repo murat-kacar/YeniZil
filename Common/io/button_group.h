@@ -30,7 +30,7 @@ class ButtonGroup : public PollingComponent {             // Kimlikli N buton, o
   void poll(uint64_t nowMs) override {
     for (std::size_t i = 0; i < N; ++i) {
       const bool pressed = isActive(buttons_[i].pin, activeLevel_);
-      if (detectors_[i].update(pressed, nowMs, press_) && handler_ != nullptr) handler_(buttons_[i].id);
+      if (detectors_[i].update(pressed, nowMs, press_) == PressEvent::kPress && handler_ != nullptr) handler_(buttons_[i].id);
     }
   }
 

@@ -4,11 +4,11 @@
 #include <cstddef>
 #include <cstdint>
 
-using NodeId     = uint8_t;                               // Ünite kimliği: MAC tablosundaki sıra
+using NodeId     = uint8_t;                               // Ünite kimliği (mantıksal adres): 0 dış ünite, daireler 1..kFlatCount
 using MacAddress = std::array<uint8_t, 6>;                // MAC adresi
 
 inline constexpr NodeId  kOutdoorUnitId   = 0;            // Dış ünite kimliği, daireler 1'den başlar
-inline constexpr uint8_t kProtocolVersion = 1;            // Çerçeve biçimi sürümü
+inline constexpr uint8_t kProtocolVersion = 2;            // Çerçeve biçimi sürümü
 
 enum class MessageType : uint8_t {                        // Mesaj tipi
   kRingBell = 1,                                          // Zil çal
@@ -22,6 +22,7 @@ constexpr bool isKnownMessageType(uint8_t value) {        // Değer tanımlı bi
 }
 
 struct Message {                                          // Doğrulanmış mesaj
+  MacAddress  sourceMac;                                  // Gönderen kartın MAC adresi: tekrar koruması buna göre
   NodeId      source;                                     // Gönderen ünite
   NodeId      destination;                                // Hedef ünite
   uint32_t    counter;                                    // Gönderenin sayacı
