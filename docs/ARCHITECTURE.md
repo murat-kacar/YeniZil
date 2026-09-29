@@ -447,7 +447,13 @@ Her aşama kendi başına doğrulanabilir bir sonuçla bitiyor (Definition of Do
 - Tezgâhta: butona basınca aynı karttaki çıkış 1,5 sn aktif oluyor.
 - `setup()` sonrasında boş heap miktarı sabit kalıyor.
 
-### Aşama 2 — Ağ (şifrelemesiz, sadece tezgâhta)
+### Aşama 2 — Ağ (şifrelemesiz, sadece tezgâhta) · **kod tamam, cihaz testi bekliyor**
+
+Aşama 3'ten öne çekilenler:
+- `ReplayWindow`: Burst her mesajı ~40 kopya gönderiyor. Tekrarlanan kopyalar eylemi iki kez tetiklemesin diye (bu aşamanın DoD'si) şimdiden gerekli.
+- `CounterStore`'un gönderme sayacı kısmı: Gönderici yeniden başlayıp sayacı sıfırdan başlatırsa alıcılar yeni mesajları "eski" sanıp atar.
+
+Aşama 3'te kalanlar: AES-CCM ile şifreleme ve doğrulama, alıcı tarafın sayacının kalıcı kaydı.
 
 **Kod:** `protocol`, `frame`, `NodeIdentity`, `EspNowRadio`, `FloodRouter`, `Intercom`, `site_config.h` ve `Tools/new_site_config.ps1`. `SecureChannel` aynı arayüzle ama şimdilik şifrelemesiz çalışacak.
 

@@ -19,11 +19,9 @@ class EventLoop {                                                        // Bile
 
   void update() {
     const uint64_t nowMs = monotonicMs();
-    uint64_t deadlineMs = nowMs + kMaxWaitMs;
-    for (Component* component = Component::first(); component != nullptr; component = component->next()) {
-      component->update(nowMs);
-      deadlineMs = std::min(deadlineMs, component->nextDeadlineMs());
-    }
+    for (Component* component = Component::first(); component != nullptr; component = component->next()) component->update(nowMs);
+    uint64_t deadlineMs = nowMs + kMaxWaitMs;                            // Zamanlar tüm güncellemelerden sonra toplanır: bir bileşen diğerine iş verebilir
+    for (Component* component = Component::first(); component != nullptr; component = component->next()) deadlineMs = std::min(deadlineMs, component->nextDeadlineMs());
     waitUntil(deadlineMs);
   }
 

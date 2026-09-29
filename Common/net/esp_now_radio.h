@@ -3,22 +3,27 @@
 #include <WiFi.h>
 #include <esp_mac.h>
 #include <esp_now.h>
+#include <esp_random.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstring>
 #include <span>
+#include "../kernel/clock.h"
 #include "../kernel/component.h"
 #include "../kernel/event_loop.h"
-
-using MacAddress = std::array<uint8_t, 6>;                              // MAC adresi
+#include "protocol.h"
 
 struct RadioConfig {                                                    // Radyo ayarları
-  uint8_t channel;                                                      // Wi-Fi kanalı (1-13), tüm ünitelerde aynı
-  int8_t  txPowerDbm;                                                   // Gönderim gücü (dBm), 2-20
-  bool    longRange;                                                    // Espressif Long Range modu, tüm ünitelerde aynı
+  uint8_t  channel;                                                     // Wi-Fi kanalı (1-13), tüm ünitelerde aynı
+  int8_t   txPowerDbm;                                                  // Gönderim gücü (dBm), 2-20
+  bool     longRange;                                                   // Espressif Long Range modu, tüm ünitelerde aynı
+  uint16_t burstPeriodMs;                                               // Bir çerçevenin kopyaları arasındaki süre (ms)
+  uint16_t burstDurationMs;                                             // Bir çerçevenin tekrarlanma süresi (ms)
+  uint16_t relayJitterMaxMs;                                            // Aktarmadan önceki en fazla rastgele bekleme (ms)
 };
 
 struct ReceivedFrame {                                                  // Alınan çerçeve
@@ -30,9 +35,10 @@ struct ReceivedFrame {                                                  // Alın
   std::array<uint8_t, kMaxBytes> bytes{};                               // Veri
 };
 
-class EspNowRadio : public Component {                                  // ESP-NOW radyo: yayın gönderir, alınanları kuyruğa koyar
+class EspNowRadio : public Component {                                  // ESP-NOW radyo: çerçeveyi süre boyunca tekrarlayarak yayınlar, alınanları kuyruğa koyar
  public:
   static constexpr std::size_t kQueueLength = 8;                        // Alma kuyruğu uzunluğu (çerçeve)
+  static constexpr std::size_t kMaxBursts   = 4;                        // Aynı anda tekrarlanan en fazla çerçeve
 
   explicit EspNowRadio(const RadioConfig& config) : config_(config) {}
 
@@ -54,10 +60,26 @@ class EspNowRadio : public Component {                                  // ESP-N
     logSettings();
   }
 
-  void update(uint64_t) override {}
+  void update(uint64_t nowMs) override {                                // Zamanı gelen kopyaları gönderir
+    for (Burst& burst : bursts_) {
+      if (!burst.active || nowMs < burst.nextSendMs) continue;
+      esp_now_send(kBroadcast.data(), burst.bytes.data(), burst.length);
+      burst.nextSendMs = nowMs + config_.burstPeriodMs;
+      if (burst.nextSendMs > burst.endMs) burst.active = false;
+    }
+  }
 
-  bool broadcast(std::span<const uint8_t> bytes) {                      // Çerçeveyi tüm ünitelere yayınlar
-    return esp_now_send(kBroadcast.data(), bytes.data(), bytes.size()) == ESP_OK;
+  uint64_t nextDeadlineMs() const override {
+    uint64_t deadlineMs = kNoDeadlineMs;
+    for (const Burst& burst : bursts_)
+      if (burst.active) deadlineMs = std::min(deadlineMs, burst.nextSendMs);
+    return deadlineMs;
+  }
+
+  bool broadcast(std::span<const uint8_t> bytes) { return startBurst(bytes, 0); }  // Kendi çerçevesini hemen yayınlamaya başlar
+
+  bool relay(std::span<const uint8_t> bytes) {                          // Başkasının çerçevesini rastgele kısa bir beklemeden sonra aktarır
+    return startBurst(bytes, esp_random() % (config_.relayJitterMaxMs + 1u));
   }
 
   [[nodiscard]] bool receive(ReceivedFrame& frame) {                    // Kuyruktaki sıradaki çerçeveyi alır, yoksa false
@@ -71,7 +93,30 @@ class EspNowRadio : public Component {                                  // ESP-N
   }
 
  private:
+  struct Burst {                                                        // Tekrarlanan bir çerçeve
+    std::array<uint8_t, ReceivedFrame::kMaxBytes> bytes{};              // Çerçeve
+    uint8_t  length     = 0;                                            // Çerçeve uzunluğu
+    uint64_t nextSendMs = 0;                                            // Sıradaki kopyanın zamanı
+    uint64_t endMs      = 0;                                            // Tekrarın bittiği an
+    bool     active     = false;                                        // Tekrarlanıyor mu
+  };
+
   static constexpr MacAddress kBroadcast = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // Yayın adresi
+
+  bool startBurst(std::span<const uint8_t> bytes, uint32_t delayMs) {  // Boş bir yuvada tekrarı başlatır
+    if (bytes.size() > ReceivedFrame::kMaxBytes) return false;
+    for (Burst& burst : bursts_) {
+      if (burst.active) continue;
+      std::copy(bytes.begin(), bytes.end(), burst.bytes.begin());
+      burst.length     = static_cast<uint8_t>(bytes.size());
+      burst.nextSendMs = monotonicMs() + delayMs;
+      burst.endMs      = burst.nextSendMs + config_.burstDurationMs;
+      burst.active     = true;
+      return true;
+    }
+    log_w("Tekrar yuvalari dolu, cerceve gonderilmedi");
+    return false;
+  }
 
   static void addBroadcastPeer() {                                      // Yayın adresini ESP-NOW eşi olarak ekler
     esp_now_peer_info_t peer{};
@@ -111,9 +156,10 @@ class EspNowRadio : public Component {                                  // ESP-N
     eventLoop.notify();
   }
 
-  RadioConfig   config_;                                                // Radyo ayarları
-  QueueHandle_t queue_ = nullptr;                                       // Alma kuyruğu
-  StaticQueue_t queueControl_{};                                        // Kuyruk denetim bloğu, heap kullanılmaz
+  RadioConfig                     config_;                              // Radyo ayarları
+  std::array<Burst, kMaxBursts>   bursts_{};                            // Tekrarlanan çerçeveler
+  QueueHandle_t                   queue_ = nullptr;                     // Alma kuyruğu
+  StaticQueue_t                   queueControl_{};                      // Kuyruk denetim bloğu, heap kullanılmaz
   std::array<uint8_t, kQueueLength * sizeof(ReceivedFrame)> queueStorage_{};  // Kuyruk belleği
 
   static inline EspNowRadio* instance_ = nullptr;                       // Geri çağrının ulaşacağı radyo
