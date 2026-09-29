@@ -45,7 +45,7 @@ class SecureChannel {                                     // Çerçeve üretir v
     const frame::Header header = frame::decodeHeader(bytes);
     if (header.version != kProtocolVersion || header.apartmentId != site::kApartmentId) return std::nullopt;  // Başka sürüm ya da komşu apartman
     if (header.sourceMac == mac_) return std::nullopt;    // Kendi yankısı
-    if (header.source >= kNodeCount || header.destination >= kNodeCount) return std::nullopt;  // Olmayan ünite
+    if (header.source >= kNodeCount || !isDestination(header.destination)) return std::nullopt;  // Olmayan ünite
     if (const Peer* known = findPeer(header.sourceMac); known != nullptr && !known->window.isFresh(header.counter)) return std::nullopt;  // Aynı mesajın başka kopyası: şifre çözmeden atılır
     std::array<uint8_t, frame::kPayloadSize> plain{};
     if (!cipher_.open(frame::nonce(header), frame::header(bytes), frame::payload(bytes), frame::tag(bytes), plain)) return std::nullopt;  // Sahte ya da bozulmuş

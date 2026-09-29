@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Common/config/input_config.h"
+#include "../Common/config/link_config.h"
 #include "../Common/io/press_detector.h"
 
 namespace config {                                        // Dış ünite ayarları

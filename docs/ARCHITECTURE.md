@@ -10,7 +10,7 @@ Sürüm 2 · 29.09.2026 · Durum: **kod tamam, donanım kurulumu bekliyor**
 
 - 4 katlı bina, her katta 1 daire.
 - **Dış ünite:** 4 zil butonu + kapı rölesi tetiği (3.3V).
-- **İç ünite (×4):** "kapıyı aç" butonu + zil tetiği (3.3V).
+- **İç ünite (×4):** "kapıyı aç" butonu + zil tetiği (3.3V) + bağlantı LED'i.
 - Her ünite kendi 5V adaptöründen beslenir. Pil yok.
 - Tamamen kablosuz, internet yok. ESP-NOW ile flooding.
 - Kart: ESP32-C3 Super Mini. Derleme ortamı: Arduino IDE, esp32 core 3.3.11 (ESP-IDF 5.5.5).
@@ -19,6 +19,7 @@ Sürüm 2 · 29.09.2026 · Durum: **kod tamam, donanım kurulumu bekliyor**
 |---|---|
 | Dış ünitede N. butona basılıp bırakıldı | N. dairenin zili 1,5 sn çalar |
 | N. dairede "kapıyı aç" butonuna basılıp bırakıldı | Kapı rölesi 1,5 sn tetiklenir |
+| İç ünite dış üniteyle bağlantıda | Bağlantı LED'i sürekli yanar, bağlantı yokken yanıp söner |
 
 ### 1.2 Kodun kapsamı
 
@@ -38,7 +39,7 @@ Her şey **Arduino-first**: önce Arduino-ESP32 core'un API ve kütüphaneleri k
 
 İhtiyaç doğduğunda eklenecek:
 
-- Geri bildirim LED'leri
+- Bağlantı LED'i dışındaki geri bildirim LED'leri
 - "Kapı sadece zil çaldıktan sonra açılabilsin" kuralı
 - Zaman senkronizasyonu (FTSP)
 - OTA güncelleme ve flash şifreleme
@@ -148,6 +149,12 @@ Her mesaj burst yüzünden ~40 kopya geliyor. Tekrar penceresi salt okunur olara
 
 **Karar:** Kodda seri port ve log yok. Hatalar dönüş değeriyle bildiriliyor, başlayamayan bileşen kapalı kalıyor. Örneğin NVS açılamazsa ya da anahtar yüklenemezse ağ açılmıyor.
 
+### Karar 18 — Bağlantı göstergesi: heartbeat
+
+Flooding ağında sürekli bir bağlantı yok, mesaj sadece olay olunca gidiyor. İç ünitenin "bağlıyım" diyebilmesi için düzenli bir sinyal gerekiyor.
+
+**Karar:** Dış ünite her 30 sn'de bir, açılışta da hemen, herkese (`kAllUnitsId`) doğrulanmış bir heartbeat yayınlıyor. Her ünite bunu teslim alıp aktarıyor, böylece üst katlara da ulaşıyor. İç ünite 95 sn (3 kaçırılan yayın + pay) boyunca heartbeat alamazsa bağlantıyı kopmuş sayıyor. Bağlantı LED'i bağlıyken sürekli yanıyor, bağlantı yokken yanıp sönüyor. Heartbeat bir eylem değil. Bu yüzden sayacı flash'a yazılmıyor, flash aşınmıyor. Maliyeti her ünitenin 30 sn'de bir 420 ms'lik bir burst göndermesi (radyo gönderimi %1,4).
+
 ---
 
 ## 3. Mimari
@@ -202,13 +209,14 @@ YeniZil/
 │   │   ├── site_config.h           gerçek değerler (git dışı)
 │   │   ├── radio_config.h          kanal, güç, pencere, aralık, burst
 │   │   ├── input_config.h          basış sınırları
+│   │   ├── link_config.h           heartbeat aralığı, bağlantı zaman aşımı
 │   │   └── power_config.h          CPU frekansı
-│   ├── kernel/   clock.h · component.h · polling_component.h · event_loop.h · byte_order.h · static_checks.h
-│   ├── io/       board_pins.h · digital_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h
+│   ├── kernel/   clock.h · component.h · polling_component.h · periodic_timer.h · event_loop.h · byte_order.h · static_checks.h
+│   ├── io/       board_pins.h · digital_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h · indicator_led.h
 │   ├── net/      protocol.h · frame.h · nodes.h · node_identity.h · learned_identity.h · broadcast_peer.h · esp_now_radio.h · flood_router.h
 │   ├── security/ ccm_cipher.h · replay_window.h · counter_store.h · secure_channel.h
 │   ├── power/    power_manager.h
-│   └── app/      intercom.h · bell.h · door_opener.h
+│   └── app/      intercom.h · bell.h · door_opener.h · link_monitor.h
 ├── docs/ARCHITECTURE.md
 └── .gitignore                      site_config.h
 ```
@@ -220,6 +228,7 @@ YeniZil/
 | `monotonicMs()` | kernel | 64-bit monoton zaman (ms), `esp_timer` | `uint64_t monotonicMs()` |
 | `Component` | soyut | Güncellenen her şeyin ortak arayüzü. Constructor'da kendini zincire ekler (intrusive list, heap yok). | `begin()`, `update(nowMs)`, `nextDeadlineMs()` |
 | `PollingComponent` | soyut | Sabit periyotla örnekleme (Template Method). `Button` ve `ButtonGroup` ortak zamanlamayı buradan alır. | `poll(nowMs)` (korumalı) |
+| `PeriodicTimer` | kernel | Sabit aralıkla olay, ilk olay açılışta (`PollingComponent`) | `onTick(void(*)())` |
 | `EventLoop` | kernel | Bileşenleri başlatır ve günceller. En yakın zamana ya da bildirime kadar bloklanır (≤ 1 sn). Watchdog'u açar. | `begin()`, `update()`, `notify()` |
 | `writeLe` / `readLe` | kernel | Tamsayıyı little-endian yazar/okur (`std::bit_cast`) | — |
 | `allUnique()` | kernel | Tabloda tekrar var mı, derleme zamanında | `consteval bool allUnique(items, key)` |
@@ -228,6 +237,8 @@ YeniZil/
 | `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(void(*)())`, `onStartupHold(void(*)())` |
 | `ButtonGroup<N>` | servis | Kimlikli N buton, olay kimlikle gelir | `onPress(void(*)(uint8_t))` |
 | `PulseOutput` | servis | Belirli süre aktif kalan çıkış. Aktifken gelen tetik yok sayılır. Açılışta titremeden pasife çekilir. | `activate()` |
+| `IndicatorLed` | servis | Sürekli yanan ya da yanıp sönen LED, pini sadece durum değişince yazar | `turnOn()`, `blink()` |
+| `LinkMonitor` | app | Süre içinde heartbeat geldiyse bağlı, gelmezse koptu. Açılışta kopuk. | `refresh()`, `onConnected()`, `onLost()` |
 | `Bell` / `DoorOpener` | app | Alan dilinde eylem (`PulseOutput` içerir) | `ring()` / `open()` |
 | `protocol` | core | `NodeId`, `MacAddress`, `MessageType`, `Message`, sürüm | `isKnownMessageType()` |
 | `frame` | core | Çerçeveyi bayt bayt yazar ve okur, nonce üretir, alanlara `std::span` verir | `encodeHeader()`, `decodeHeader()`, `nonce()`, `header()`, `payload()`, `tag()` |
@@ -242,7 +253,7 @@ YeniZil/
 | `CounterStore` | platform | NVS (`Preferences`): gönderme sayacı rezervi, gönderen MAC başına son eylem sayacı | `begin()`, `loadTxReserve()`, `saveTxReserve()`, `loadRxCounter()`, `saveRxCounter()` |
 | `SecureChannel` | servis | Sabit sıra (3.6). Giden çerçeveyi şifreler ve imzalar. Tekrar penceresi gönderen MAC başına. | `bool begin(mac)`, `optional<Bytes> seal(src, dst, type)`, `optional<Message> open(bytes)`, `bool commit(message)` |
 | `FloodRouter` | servis | Gelen çerçeveyi süzer, eşleştirme modunda kimliği öğretir, kendine geleni kalıcı kayıttan sonra teslim eder, gerisini **değiştirmeden** aktarır | `send(dst, type)`, `on(type, void(*)())` |
-| `Intercom` | app (Facade) | Protokolü gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `onRing()`, `onDoorOpenRequest()` |
+| `Intercom` | app (Facade) | Protokolü gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `broadcastHeartbeat()`, `onRing()`, `onDoorOpenRequest()`, `onHeartbeat()` |
 | `PowerManager` | platform | CPU frekansı | `begin()` |
 
 **Tasarım kuralları:**
@@ -259,6 +270,7 @@ YeniZil/
 void setup() {
   flatButtons.onPress([](NodeId flat) { intercom.ringFlat(flat); });  // N. daire butonu -> N. dairenin zili
   intercom.onDoorOpenRequest([] { doorOpener.open(); });              // Kapı açma isteği -> kapı açılır
+  heartbeatTimer.onTick([] { intercom.broadcastHeartbeat(); });       // Periyot doldu -> "buradayım" yayını
   eventLoop.begin();
 }
 
@@ -272,6 +284,9 @@ void setup() {
   openDoorButton.onPress([] { intercom.requestDoorOpen(); });     // Kapıyı aç butonu -> dış üniteye istek
   openDoorButton.onStartupHold([] { identity.startPairing(); });  // Açılışta basılı tutuldu -> eşleştirme modu
   intercom.onRing([] { bell.ring(); });                            // Zil isteği -> zil çalar
+  intercom.onHeartbeat([] { linkMonitor.refresh(); });             // Dış üniteden "buradayım" -> bağlantı var
+  linkMonitor.onConnected([] { linkLed.turnOn(); });               // Bağlantı sağlandı -> LED sürekli yanar
+  linkMonitor.onLost([] { linkLed.blink(); });                     // Bağlantı yok -> LED yanıp söner
   eventLoop.begin();
 }
 
@@ -325,7 +340,8 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 6. Gönderen MAC için pencere yoksa şimdi aç ve kayıtlı sayacı NVS'den yükle. Yer sadece doğrulanmış göndericiye ayrılıyor, sahte MAC'ler tabloyu dolduramıyor. Pencereyi ilerlet.
 7. Mesaj tipi tanımlı mı?
 8. Eşleştirme modundaysam ve bu bir zil isteğiyse hedef daireyi kimliğim olarak kaydet (Karar 4).
-9. Hedef bensem sayacı NVS'ye yaz, yazılamazsa at, sonra eylemi çalıştır. Değilsem çerçeveyi olduğu gibi aktar.
+9. Hedef herkesse (heartbeat) aktar ve teslim et, kalıcı kayıt yok (Karar 18).
+10. Hedef bensem sayacı NVS'ye yaz, yazılamazsa at, sonra eylemi çalıştır. Değilsem çerçeveyi olduğu gibi aktar.
 
 ### 3.7 Eşzamanlılık ve zaman
 
@@ -348,6 +364,9 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | Kapı isteği bekleme süresi | 2 sn | InDoor/unit_config.h | Mühendislik tercihi |
 | Eşleştirme için basılı tutma | 5 sn (≥ 3 sn) | InDoor/unit_config.h | Kazara olmayacak kadar uzun |
 | Eşleştirme penceresi | 2 dk (≥ 30 sn) | InDoor/unit_config.h | Dış üniteye yürümeye yetecek süre |
+| Heartbeat aralığı | 30 sn (≥ 10 sn) | link_config.h | Her yayın tüm üniteleri 420 ms gönderime sokuyor |
+| Bağlantı zaman aşımı | 95 sn (türetilmiş) | link_config.h | 3 × aralık + 5 sn: tek kaçırılan yayın LED'i düşürmez |
+| LED yanıp sönme | 0,5 sn yanık / 0,5 sn sönük | InDoor/unit_config.h | Belirgin, göz yormayan hız |
 | Uyanma aralığı | 200 ms | radio_config.h | Espressif: "100'ün katları önerilir" (`esp_wifi.h`) · 4 kat en kötü 0,8 sn |
 | Uyanma penceresi | 20 ms | radio_config.h | %10 hedefi · burst periyodunun 2 katı |
 | Burst periyodu | 10 ms | radio_config.h | Pencere başına ≥ 2 kopya |

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Common/config/input_config.h"
+#include "../Common/config/link_config.h"
 #include "../Common/io/press_detector.h"
 
 namespace config {                                        // İç ünite ayarları
@@ -8,6 +9,7 @@ namespace config {                                        // İç ünite ayarlar
 inline constexpr uint32_t kBellPulseMs     = 1500;        // Zil tetik süresi (ms)
 inline constexpr uint32_t kPairingHoldMs   = 5000;        // Açılışta "kapıyı aç" en az bu kadar basılı tutulursa eşleştirme modu (ms)
 inline constexpr uint32_t kPairingWindowMs = 120000;      // Eşleştirme modunun süresi (ms): bu sürede dairenin dış ünitedeki butonuna basılır
+inline constexpr uint32_t kLinkBlinkMs     = 500;         // Bağlantı yokken LED'in yanık ve sönük kalma süresi (ms)
 
 inline constexpr PressConfig kOpenDoorPress = {           // Kapıyı aç butonu kuralları
     .minMs         = kMinPressMs,

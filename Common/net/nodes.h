@@ -10,3 +10,4 @@ static_assert(site::kFlatCount >= 1 && site::kFlatCount <= 15, "Daire sayısı 1
 static_assert(site::kApartmentId != 0, "Apartman kimliği atanmamış: site_config.h içinde kApartmentId rastgele doldurulmalı");
 
 constexpr bool isFlatId(NodeId id) { return id != kOutdoorUnitId && id < kNodeCount; }  // Geçerli bir daire kimliği mi
+constexpr bool isDestination(NodeId id) { return id < kNodeCount || id == kAllUnitsId; }  // Geçerli bir hedef mi

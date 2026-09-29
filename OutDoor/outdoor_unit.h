@@ -7,6 +7,7 @@
 #include "../Common/config/power_config.h"
 #include "../Common/config/radio_config.h"
 #include "../Common/kernel/event_loop.h"
+#include "../Common/kernel/periodic_timer.h"
 #include "../Common/power/power_manager.h"
 #include "../Common/net/esp_now_radio.h"
 #include "../Common/net/flood_router.h"
@@ -31,3 +32,4 @@ inline FloodRouter   router(radio, secureChannel, identity);                    
 inline Intercom      intercom(router);                                                               // Diyafon
 inline ButtonGroup   flatButtons(pins::kFlatButtons, pins::kButtonActive, config::kBellPress);       // Daire zil butonları
 inline DoorOpener    doorOpener(pins::kDoorRelay, pins::kDoorRelayActive, config::kDoorPulseMs);     // Kapı açıcı
+inline PeriodicTimer heartbeatTimer(config::kHeartbeatIntervalMs);                                   // "Buradayım" yayın zamanlayıcısı

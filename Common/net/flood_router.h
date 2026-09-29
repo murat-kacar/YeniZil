@@ -29,7 +29,7 @@ class FloodRouter : public Component {                    // Flooding: kendine g
 
   void send(NodeId destination, MessageType type) {       // Hedefe mesaj gönderir, eşleşmemiş ünite gönderemez
     const std::optional<NodeId> self = identity_.id();
-    if (!ready_ || !self || destination >= kNodeCount || destination == *self) return;
+    if (!ready_ || !self || !isDestination(destination) || destination == *self) return;
     if (const std::optional<frame::Bytes> bytes = channel_.seal(*self, destination, type)) radio_.broadcast(*bytes);
   }
 
@@ -44,6 +44,11 @@ class FloodRouter : public Component {                    // Flooding: kendine g
     if (!message) return;
     if (identity_.isPairing() && message->type == MessageType::kRingBell && isFlatId(message->destination))
       identity_.adopt(message->destination);              // Eşleştirme (learn mode): gelen ilk zil isteğinin dairesi bu ünitenin kimliği olur
+    if (message->destination == kAllUnitsId) {            // Herkese: aktar ve teslim et. Sadece heartbeat, eylem olmadığı için kalıcı kayıt yok (flash aşınmaz)
+      radio_.relay(bytes);
+      if (message->type == MessageType::kHeartbeat) deliver(*message);
+      return;
+    }
     if (message->destination != identity_.id()) {
       radio_.relay(bytes);                                // Başkasının çerçevesi değiştirilmeden aktarılır
       return;
