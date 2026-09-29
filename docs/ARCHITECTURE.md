@@ -13,7 +13,7 @@ Sürüm 2 · 29.09.2026 · Durum: **kod tamam, donanım kurulumu bekliyor**
 - **İç ünite (×4):** "kapıyı aç" butonu + zil tetiği (3.3V) + bağlantı LED'i.
 - Her ünite kendi 5V adaptöründen beslenir. Pil yok.
 - Tamamen kablosuz, internet yok. ESP-NOW ile flooding.
-- Kart: ESP32-C3 Super Mini. Derleme ortamı: Arduino IDE, esp32 core 3.3.11 (ESP-IDF 5.5.5).
+- Kart: ESP32-C3 Super Mini. Derleme ortamı: Arduino IDE, esp32 core 3.3.12 (ESP-IDF 5.5.5).
 
 | Tetikleyici | Sonuç |
 |---|---|
@@ -497,7 +497,7 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 ## Kaynaklar
 
 - ESP32-C3 datasheet (güç tüketimi): https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf
-- Kurulu core yapılandırması: `%LOCALAPPDATA%/Arduino15/packages/esp32/tools/esp32c3-libs/3.3.11/sdkconfig`
+- Kurulu core yapılandırması: `%LOCALAPPDATA%/Arduino15/packages/esp32/tools/esp32c3-libs/3.3.12/sdkconfig`
 - `esp_wifi.h` / `esp_now.h` (uyanma aralığı ve penceresi notları): aynı klasörde `include/esp_wifi/include/`
 - Ganssle, A Guide to Debouncing: https://www.ganssle.com/debouncing.htm · https://www.ganssle.com/debouncing-pt2.htm
 - IEC 61000-4-4 EFT/Burst: https://en.wikipedia.org/wiki/IEC_61000-4-4
