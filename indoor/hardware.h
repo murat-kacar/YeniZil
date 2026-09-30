@@ -13,7 +13,7 @@ inline constexpr uint8_t kOpenDoorButton = 10;            // Kapıyı aç butonu
 inline constexpr uint8_t kButtonActive   = LOW;           // Buton basılıyken LOW okunur (dahili pull-up)
 inline constexpr uint8_t kBell           = 0;             // Zil tetiği: 3.3V, pin-GND arası 10k pull-down şart
 inline constexpr uint8_t kBellActive     = HIGH;          // Zil tetik seviyesi
-inline constexpr uint8_t kLinkLed        = 1;             // Bağlantı LED'i: pin - 330Ω - LED (+ bacak) - LED (- bacak) - GND
+inline constexpr uint8_t kLinkLed        = 1;             // Bağlantı LED'i: pin - 240Ω - LED (+ bacak) - LED (- bacak) - GND
 inline constexpr uint8_t kLinkLedActive  = HIGH;          // LED'i yakan seviye
 
 inline constexpr uint8_t kUsedPins[] = {kOpenDoorButton, kBell, kLinkLed};  // Kullanılan tüm pinler, denetim için

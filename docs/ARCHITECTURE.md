@@ -506,7 +506,7 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 **Kararlaşanlar:**
 - Zil 3.3V ile çalışıyor, en fazla 2,5 mA çekiyor ve iç ünitenin zil pininden (GPIO0) doğrudan besleniyor. GPIO pininin güvenli sınırı ~20 mA olduğu için sürücü devre gerekmiyor. Zil ileride daha güçlü bir modelle (> 20 mA ya da bobinli) değiştirilirse araya transistör/MOSFET ve flyback diyot konmalı.
 - Kapı rölesi 3.3V ile tetikleniyor ve kendi izole güç beslemesi var. ESP sadece tetik girişini sürüyor.
-- Çıkış pinlerine (röle ya da zil yerine) LED bağlanacaksa araya 330 Ω seri direnç şart. Pin-GND arasındaki 10k pull-down akımı sınırlamaz. Dirençsiz LED pinden aşırı akım çeker, çipi ısıtır ve pini bozabilir (yük testinde dış ünitede yaşandı).
+- Kendi bağlanan her LED'e 240 Ω seri direnç şart: bağlantı LED'i, röle ya da zil yerine takılan test LED'i. 3.3V'ta akım renge göre ~1–5 mA olur. Pin-GND arasındaki 10k pull-down akımı sınırlamaz. Dirençsiz LED pinden aşırı akım çeker, çipi ısıtır ve pini bozabilir (yük testinde dış ünitede yaşandı).
 - Dış ünitenin ESP'si ve kapı rölesi tetiği bina içinde, sadece butonlar dışarıda (Karar 2). Anahtar dışarıdan erişilebilir olmadığı için flash şifrelemeye ve ESP-IDF'e geçişe gerek yok.
 - Her ünite 5V 300 mA adaptörle besleniyor. Ortalama tüketim ~25 mA. Gönderim anında tepe akım 8 dBm'de tahminen 150–200 mA. Anlık düşüşlere karşı kartın 5V ve GND uçları arasına 470 µF elektrolitik kondansatör önerilir. TX gücü 14 dBm'in üstüne çıkarılacaksa en az 500 mA'lik adaptör gerekir.
 
