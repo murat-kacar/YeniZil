@@ -13,16 +13,16 @@
 
 namespace yenizil {
 
-template <std::size_t N>
+template <typename Id, std::size_t N>
 class ButtonGroup : public PollingComponent {             // Kimlikli N buton, olay kimlikle gelir
  public:
-  ButtonGroup(const ButtonPin (&buttons)[N], uint8_t activeLevel, const PressSettings& press)
+  ButtonGroup(const ButtonPin<Id> (&buttons)[N], uint8_t activeLevel, const PressSettings& press)
       : PollingComponent(config::kSamplePeriodMs), buttons_(buttons), activeLevel_(activeLevel), press_(press) {}
 
-  void onPress(Handler<uint8_t> handler) { handler_ = handler; }  // Geçerli basışta, butonun kimliğiyle çağrılır
+  void onPress(Handler<Id> handler) { handler_ = handler; }  // Geçerli basışta, butonun kimliğiyle çağrılır
 
   void begin() override {
-    for (const ButtonPin& button : buttons_) setupInput(button.pin, activeLevel_);
+    for (const ButtonPin<Id>& button : buttons_) setupInput(button.pin, activeLevel_);
   }
 
  protected:
@@ -32,11 +32,11 @@ class ButtonGroup : public PollingComponent {             // Kimlikli N buton, o
   }
 
  private:
-  const ButtonPin (&buttons_)[N];                         // Buton tablosu, hardware.h içinde
+  const ButtonPin<Id> (&buttons_)[N];                     // Buton tablosu, hardware.h içinde
   uint8_t                      activeLevel_;              // Basılıyken okunan seviye
   PressSettings                press_;                    // Basış kuralları
   std::array<PressDetector, N> detectors_{};              // Buton başına basış durumu
-  Handler<uint8_t>             handler_ = nullptr;        // Basış işleyicisi
+  Handler<Id>                  handler_ = nullptr;        // Basış işleyicisi
 };
 
 }  // namespace yenizil

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include "../kernel/enum_value.h"
 #include "../net/frame.h"
 #include "../net/nodes.h"
 #include "../net/protocol.h"
@@ -19,7 +20,7 @@ class SecureChannel {                                     // Çerçeve üretir v
   static constexpr uint32_t    kCounterReserve = 1000;    // Sayaç rezervi: OpenThread STORE_FRAME_COUNTER_AHEAD varsayılanı
   static constexpr std::size_t kMaxPeers       = 16;      // Bir açılışta izlenebilen en fazla gönderici kart
 
-  SecureChannel(CcmCipher& cipher, CounterStore& store, uint32_t apartmentId) : cipher_(cipher), store_(store), apartmentId_(apartmentId) {}
+  SecureChannel(CcmCipher& cipher, CounterStore& store, ApartmentId apartmentId) : cipher_(cipher), store_(store), apartmentId_(apartmentId) {}
 
   [[nodiscard]] bool begin(const MacAddress& mac) {       // Kartın MAC'ini alır, anahtarı ve gönderme sayacını yükler, başarısızsa false
     mac_ = mac;
@@ -31,9 +32,9 @@ class SecureChannel {                                     // Çerçeve üretir v
 
   [[nodiscard]] std::optional<frame::Bytes> seal(NodeId source, NodeId destination, MessageType type) {  // Yeni sayaçla şifreli ve imzalı çerçeve üretir
     if (!reserveCounter()) return std::nullopt;
-    const frame::Header header{kProtocolVersion, apartmentId_, mac_, source, destination, nextCounter_++};
+    const frame::Header header{kProtocolVersion, apartmentId_, mac_, source, destination, FrameCounter{nextCounter_++}};
     frame::Bytes bytes = frame::encodeHeader(header);
-    const std::array<uint8_t, frame::kPayloadSize> plain = {static_cast<uint8_t>(type)};
+    const std::array<uint8_t, frame::kPayloadSize> plain = {toUnderlying(type)};
     if (!cipher_.seal(frame::nonce(header), frame::header(bytes), plain, frame::payload(bytes), frame::tag(bytes))) return std::nullopt;
     return bytes;
   }
@@ -42,19 +43,19 @@ class SecureChannel {                                     // Çerçeve üretir v
     const frame::Header header = frame::decodeHeader(bytes);
     if (header.version != kProtocolVersion || header.apartmentId != apartmentId_) return std::nullopt;  // Başka sürüm ya da komşu apartman
     if (header.sourceMac == mac_) return std::nullopt;    // Kendi yankısı
-    if (header.source >= kNodeCount || !isDestination(header.destination)) return std::nullopt;  // Olmayan ünite
-    if (const Peer* known = findPeer(header.sourceMac); known != nullptr && !known->window.isFresh(header.counter)) return std::nullopt;  // Aynı mesajın başka kopyası: şifre çözmeden atılır
+    if (!isNode(header.source) || !isDestination(header.destination)) return std::nullopt;  // Olmayan ünite
+    if (const Peer* known = findPeer(header.sourceMac); known != nullptr && !known->window.isFresh(toUnderlying(header.counter))) return std::nullopt;  // Aynı mesajın başka kopyası: şifre çözmeden atılır
     std::array<uint8_t, frame::kPayloadSize> plain{};
     if (!cipher_.open(frame::nonce(header), frame::header(bytes), frame::payload(bytes), frame::tag(bytes), plain)) return std::nullopt;  // Sahte ya da bozulmuş
     Peer* peer = peerFor(header.sourceMac);               // Yer sadece doğrulanmış göndericiye ayrılır: sahte MAC'ler tabloyu dolduramaz
-    if (peer == nullptr || !peer->window.isFresh(header.counter)) return std::nullopt;  // Tablo dolu ya da NVS'deki kayda göre eski
-    peer->window.markSeen(header.counter);                // Pencere sadece doğrulanmış çerçeveyle ilerler: sahte yüksek sayaç gerçek mesajları engelleyemez
+    if (peer == nullptr || !peer->window.isFresh(toUnderlying(header.counter))) return std::nullopt;  // Tablo dolu ya da NVS'deki kayda göre eski
+    peer->window.markSeen(toUnderlying(header.counter));                // Pencere sadece doğrulanmış çerçeveyle ilerler: sahte yüksek sayaç gerçek mesajları engelleyemez
     if (!isKnownMessageType(plain[0])) return std::nullopt;
     return Message{header.sourceMac, header.source, header.destination, header.counter, static_cast<MessageType>(plain[0])};
   }
 
   [[nodiscard]] bool commit(const Message& message) {     // Eylemden önce çağrılır: sayacı kalıcı kaydeder, yeniden başlamadan sonra aynı çerçeve kabul edilmez
-    return store_.saveRxCounter(message.sourceMac, message.counter);
+    return store_.saveRxCounter(message.sourceMac, toUnderlying(message.counter));
   }
 
  private:
@@ -89,7 +90,7 @@ class SecureChannel {                                     // Çerçeve üretir v
 
   CcmCipher&                    cipher_;                  // AES-CCM
   CounterStore&                 store_;                   // Sayaç kalıcı kaydı
-  uint32_t                      apartmentId_;             // Ağ (apartman) kimliği
+  ApartmentId                   apartmentId_;             // Ağ (apartman) kimliği
   MacAddress                    mac_{};                   // Bu kartın MAC adresi
   uint32_t                      nextCounter_  = 0;        // Sıradaki gönderme sayacı
   uint32_t                      reservedUpTo_ = 0;        // Flash'a kaydedilmiş rezervin sonu

@@ -11,7 +11,7 @@ class BroadcastPeer : public ESP_NOW_Peer {               // ESP-NOW yayın eşi
  public:
   explicit BroadcastPeer(bool longRange) : BroadcastPeer(rateFor(longRange)) {}
 
-  bool begin() { return add(); }                          // Eşi ekler, ESP_NOW.begin() sonrası çağrılır
+  [[nodiscard]] bool begin() { return add(); }            // Eşi ekler, ESP_NOW.begin() sonrası çağrılır
 
   bool send(std::span<const uint8_t> bytes) {             // Tek kopya yayınlar
     return ESP_NOW_Peer::send(bytes.data(), static_cast<int>(bytes.size())) == bytes.size();

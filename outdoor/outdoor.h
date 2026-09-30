@@ -41,7 +41,7 @@ inline constexpr NetworkSettings kNetwork = {             // Ağ ayarları
 
 static_assert(kDoorPulseMs >= 1000 && kDoorPulseMs <= 2000, "Kapı tetik süresi 1-2 sn olmalı (gereksinim)");
 static_assert(isAssigned(kNetwork), "Ağ kimliği ya da şifresi atanmamış: outdoor_config.h içinde rastgele doldurulmalı");
-static_assert(std::all_of(std::begin(pins::kFlatButtons), std::end(pins::kFlatButtons), [](const ButtonPin& button) { return isFlatId(button.id); }),
+static_assert(std::all_of(std::begin(pins::kFlatButtons), std::end(pins::kFlatButtons), [](const ButtonPin<NodeId>& button) { return isFlatId(button.id); }),
               "Daire butonu olmayan bir daireye bağlı: building_config.h kFlatCount");
 
 }  // namespace yenizil::config

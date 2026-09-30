@@ -29,14 +29,14 @@ class EventLoop {                                                        // Bile
   }
 
   void notify() {                                                        // Başka bir görevden döngüyü hemen uyandırır
-    if (task_ != nullptr) xTaskNotifyGive(task_);
+    if (task_ != nullptr) static_cast<void>(xTaskNotifyGive(task_));  // Her zaman pdPASS döner
   }
 
  private:
   void waitUntil(uint64_t deadlineMs) const {                            // Zamana ya da bildirime kadar bekler, işlemci bu sürede WFI ile boşta
     const uint64_t nowMs = monotonicMs();
     if (deadlineMs <= nowMs) return;
-    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(static_cast<uint32_t>(deadlineMs - nowMs)));
+    static_cast<void>(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(static_cast<uint32_t>(deadlineMs - nowMs))));  // Bildirim sayısı gerekmiyor: uyanınca her şey yeniden kontrol edilir
   }
 
   TaskHandle_t task_ = nullptr;                                          // loop() görevinin tanıtıcısı

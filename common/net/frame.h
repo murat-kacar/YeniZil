@@ -6,16 +6,19 @@
 #include <cstdint>
 #include <span>
 #include "../kernel/byte_order.h"
+#include "../kernel/enum_value.h"
 #include "protocol.h"
 
 namespace yenizil::frame {                                // Çerçeve biçimi v2: alanlar bayt bayt yazılır, struct kopyalanmaz
 
-inline constexpr std::size_t kMacSize     = std::tuple_size_v<MacAddress>;  // MAC adresi (bayt)
-inline constexpr std::size_t kSize        = 26;           // Çerçeve boyutu (bayt)
-inline constexpr std::size_t kHeaderSize  = 17;           // İmzalı, şifresiz başlık (bayt)
-inline constexpr std::size_t kPayloadSize = 1;            // Şifreli ve imzalı içerik: mesaj tipi (bayt)
-inline constexpr std::size_t kTagSize     = 8;            // AES-CCM doğrulama etiketi (bayt)
-inline constexpr std::size_t kNonceSize   = 13;           // AES-CCM nonce (bayt)
+inline constexpr std::size_t kMacSize       = std::tuple_size_v<MacAddress>;  // MAC adresi (bayt)
+inline constexpr std::size_t kApartmentSize = sizeof(ApartmentId);            // Apartman kimliği (bayt)
+inline constexpr std::size_t kCounterSize   = sizeof(FrameCounter);           // Sayaç (bayt)
+inline constexpr std::size_t kSize          = 26;         // Çerçeve boyutu (bayt)
+inline constexpr std::size_t kHeaderSize    = 17;         // İmzalı, şifresiz başlık (bayt)
+inline constexpr std::size_t kPayloadSize   = 1;          // Şifreli ve imzalı içerik: mesaj tipi (bayt)
+inline constexpr std::size_t kTagSize       = 8;          // AES-CCM doğrulama etiketi (bayt)
+inline constexpr std::size_t kNonceSize     = 13;         // AES-CCM nonce (bayt)
 
 inline constexpr std::size_t kVersionAt     = 0;          // sürüm (1)
 inline constexpr std::size_t kApartmentAt   = 1;          // apartman kimliği (4)
@@ -30,32 +33,33 @@ inline constexpr std::size_t kNonceMacAt     = 0;         // nonce: gönderen MA
 inline constexpr std::size_t kNonceCounterAt = 6;         // nonce: sayaç (4)
 inline constexpr std::size_t kNonceVersionAt = 10;        // nonce: sürüm (1), kalan 2 bayt sıfır
 
-static_assert(kSourceAt == kSourceMacAt + kMacSize && kPayloadAt == kHeaderSize && kTagAt == kPayloadAt + kPayloadSize && kTagAt + kTagSize == kSize,
-              "Alan yerleşimi çerçeve boyutuyla uyuşmuyor");
-static_assert(kNonceCounterAt == kNonceMacAt + kMacSize && kNonceVersionAt == kNonceCounterAt + 4 && kNonceVersionAt < kNonceSize,
+static_assert(kSourceMacAt == kApartmentAt + kApartmentSize && kSourceAt == kSourceMacAt + kMacSize && kPayloadAt == kCounterAt + kCounterSize,
+              "Alan yerleşimi alan boyutlarıyla uyuşmuyor");
+static_assert(kPayloadAt == kHeaderSize && kTagAt == kPayloadAt + kPayloadSize && kTagAt + kTagSize == kSize, "Alan yerleşimi çerçeve boyutuyla uyuşmuyor");
+static_assert(kNonceCounterAt == kNonceMacAt + kMacSize && kNonceVersionAt == kNonceCounterAt + kCounterSize && kNonceVersionAt < kNonceSize,
               "Nonce yerleşimi nonce boyutuyla uyuşmuyor");
 
 using Bytes = std::array<uint8_t, kSize>;                 // Ham çerçeve
 using Nonce = std::array<uint8_t, kNonceSize>;            // AES-CCM nonce
 
 struct Header {                                           // Başlık, tamamı imzalı
-  uint8_t    version;                                     // Çerçeve biçimi sürümü
-  uint32_t   apartmentId;                                 // Apartman kimliği
-  MacAddress sourceMac;                                   // Gönderen kartın MAC adresi: nonce'u kimlikten bağımsız tekil yapar
-  NodeId     source;                                      // Gönderen ünite
-  NodeId     destination;                                 // Hedef ünite
-  uint32_t   counter;                                     // Gönderenin sayacı
+  uint8_t      version;                                   // Çerçeve biçimi sürümü
+  ApartmentId  apartmentId;                               // Apartman kimliği
+  MacAddress   sourceMac;                                 // Gönderen kartın MAC adresi: nonce'u kimlikten bağımsız tekil yapar
+  NodeId       source;                                    // Gönderen ünite
+  NodeId       destination;                               // Hedef ünite
+  FrameCounter counter;                                   // Gönderenin sayacı
 };
 
 constexpr Bytes encodeHeader(const Header& header) {      // Başlığı yazar, içerik ve etiket sıfır
   Bytes bytes{};
   const std::span<uint8_t, kSize> view(bytes);
   bytes[kVersionAt] = header.version;
-  writeLe<uint32_t>(view.subspan<kApartmentAt, 4>(), header.apartmentId);
+  writeLe(view.subspan<kApartmentAt, kApartmentSize>(), toUnderlying(header.apartmentId));
   std::ranges::copy(header.sourceMac, view.subspan<kSourceMacAt, kMacSize>().begin());
-  bytes[kSourceAt]      = header.source;
-  bytes[kDestinationAt] = header.destination;
-  writeLe<uint32_t>(view.subspan<kCounterAt, 4>(), header.counter);
+  bytes[kSourceAt]      = toUnderlying(header.source);
+  bytes[kDestinationAt] = toUnderlying(header.destination);
+  writeLe(view.subspan<kCounterAt, kCounterSize>(), toUnderlying(header.counter));
   return bytes;
 }
 
@@ -63,21 +67,21 @@ constexpr Header decodeHeader(const Bytes& bytes) {       // Çerçeveden başl�
   const std::span<const uint8_t, kSize> view(bytes);
   Header header{
       .version     = bytes[kVersionAt],
-      .apartmentId = readLe<uint32_t>(view.subspan<kApartmentAt, 4>()),
+      .apartmentId = ApartmentId{readLe<uint32_t>(view.subspan<kApartmentAt, kApartmentSize>())},
       .sourceMac   = {},
-      .source      = bytes[kSourceAt],
-      .destination = bytes[kDestinationAt],
-      .counter     = readLe<uint32_t>(view.subspan<kCounterAt, 4>()),
+      .source      = NodeId{bytes[kSourceAt]},
+      .destination = NodeId{bytes[kDestinationAt]},
+      .counter     = FrameCounter{readLe<uint32_t>(view.subspan<kCounterAt, kCounterSize>())},
   };
   std::ranges::copy(view.subspan<kSourceMacAt, kMacSize>(), header.sourceMac.begin());
   return header;
 }
 
-constexpr Nonce nonce(const Header& header) {             // sourceMac | counter | version | 0: MAC fabrikadan tekil, sayaç kalıcı; kimlikler çakışsa da nonce tekrarlanmaz
+constexpr Nonce nonce(const Header& header) {             // sourceMac | counter | version | 0: MAC fabrikadan tekil, sayaç kalıcı; kimlikler çakışsa da nonce tekrarlanmaz (IEEE 802.15.4 CCM*)
   Nonce bytes{};
   const std::span<uint8_t, kNonceSize> view(bytes);
   std::ranges::copy(header.sourceMac, view.subspan<kNonceMacAt, kMacSize>().begin());
-  writeLe<uint32_t>(view.subspan<kNonceCounterAt, 4>(), header.counter);
+  writeLe(view.subspan<kNonceCounterAt, kCounterSize>(), toUnderlying(header.counter));
   bytes[kNonceVersionAt] = header.version;
   return bytes;
 }

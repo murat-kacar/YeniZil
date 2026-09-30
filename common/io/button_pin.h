@@ -4,8 +4,9 @@
 
 namespace yenizil {
 
-struct ButtonPin {                                        // Kimlikli buton bağlantısı
-  uint8_t id;                                             // Olayla gelen kimlik, ör. daire numarası
+template <typename Id>
+struct ButtonPin {                                        // Kimlikli buton bağlantısı: kimlik tipi güçlü tip olabilir, pinle karışmaz
+  Id      id;                                             // Olayla gelen kimlik, ör. daire numarası
   uint8_t pin;                                            // Buton pini
 };
 

@@ -19,13 +19,13 @@ namespace yenizil {
 struct NetworkSettings {                                  // Ağ ayarları: ünite dosyası verir
   RadioSettings                                 radio;    // Radyo ayarları
   BurstSettings                                 burst;    // Tekrarlı gönderim ayarları
-  uint32_t                                      apartmentId;  // Ağ (apartman) kimliği
+  ApartmentId                                   apartmentId;  // Ağ (apartman) kimliği
   std::span<const uint8_t, CcmCipher::kKeySize> key;      // Ağ şifresi
   NodeId                                        nodeId;   // Bu ünitenin ağdaki numarası
 };
 
 constexpr bool isAssigned(const NetworkSettings& network) {  // Ağ kimliği ve şifre doldurulmuş mu (sıfır değil)
-  return network.apartmentId != 0 && std::ranges::any_of(network.key, [](uint8_t byte) { return byte != 0; });
+  return network.apartmentId != ApartmentId{0} && std::ranges::any_of(network.key, [](uint8_t byte) { return byte != 0; });
 }
 
 class Intercom {                                          // Diyafon: ağ katmanını kurar ve gizler, alan dilinde işlemler sunar (Facade)

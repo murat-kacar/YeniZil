@@ -27,25 +27,29 @@ struct ReceivedFrame {                                                  // Alın
 
 class EspNowRadio : public Component {                                  // ESP-NOW radyo: Wi-Fi'ı ayarlar, sürekli dinler, tek kopya gönderir, alınanları kuyruğa koyar
  public:
-  static constexpr std::size_t kQueueLength = 8;                        // Alma kuyruğu uzunluğu (çerçeve)
+  static constexpr std::size_t kQueueLength       = 8;                  // Alma kuyruğu uzunluğu (çerçeve)
+  static constexpr int         kTxPowerStepsPerDbm = 4;                  // Sürücünün TX gücü birimi: 0,25 dBm
 
   EspNowRadio(const RadioSettings& settings, EventLoop& loop) : settings_(settings), loop_(loop), peer_(settings.longRange) {}
 
   void begin() override {
     queue_ = xQueueCreateStatic(kQueueLength, sizeof(ReceivedFrame), queueStorage_.data(), &queueControl_);
     WiFi.enableLongRange(settings_.longRange);                          // mode()'dan önce verilmeli
-    WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);                                               // Modem uykusu kapalı: radyo sürekli dinler, mesaj ilk kopyada yakalanır
-    WiFi.setChannel(settings_.channel);
-    WiFi.setTxPower(static_cast<wifi_power_t>(settings_.txPowerDbm * 4));  // Sürücü 0,25 dBm birimi kullanır
-    if (!ESP_NOW.begin()) return;
-    ESP_NOW.onNewPeer(&EspNowRadio::onReceive, this);                   // Göndericiler eş olarak eklenmez, tüm çerçeveler buraya gelir
-    peer_.begin();                                                      // Eklenemezse sadece gönderim çalışmaz, alma sürer
+    ready_ = queue_ != nullptr                                          // Adımlardan biri başarısızsa radyo kapalı kalır
+          && WiFi.mode(WIFI_STA)
+          && WiFi.setSleep(false)                                       // Modem uykusu kapalı: radyo sürekli dinler, mesaj ilk kopyada yakalanır
+          && WiFi.setChannel(settings_.channel) == ESP_OK
+          && WiFi.setTxPower(static_cast<wifi_power_t>(settings_.txPowerDbm * kTxPowerStepsPerDbm))
+          && ESP_NOW.begin()
+          && peer_.begin();
+    if (ready_) ESP_NOW.onNewPeer(&EspNowRadio::onReceive, this);       // Göndericiler eş olarak eklenmez, tüm çerçeveler buraya gelir
   }
 
   void update(uint64_t) override {}
 
-  bool send(std::span<const uint8_t> bytes) { return peer_.send(bytes); }  // Tek kopya yayınlar
+  [[nodiscard]] bool isReady() const { return ready_; }                // Kurulum tamamlandı mı
+
+  [[nodiscard]] bool send(std::span<const uint8_t> bytes) { return ready_ && peer_.send(bytes); }  // Tek kopya yayınlar, gönderilemezse false
 
   [[nodiscard]] bool receive(ReceivedFrame& frame) {                    // Kuyruktaki sıradaki çerçeveyi alır, yoksa false
     return queue_ != nullptr && xQueueReceive(queue_, &frame, 0) == pdTRUE;
@@ -64,13 +68,14 @@ class EspNowRadio : public Component {                                  // ESP-N
     frame.length = static_cast<uint8_t>(length);
     std::copy_n(data, length, frame.bytes.begin());
     EspNowRadio& radio = *static_cast<EspNowRadio*>(arg);
-    xQueueSend(radio.queue_, &frame, 0);
+    if (xQueueSend(radio.queue_, &frame, 0) != pdTRUE) return;          // Kuyruk doluysa çerçeve düşer: gönderen her çerçeveyi 3 kez yollar
     radio.loop_.notify();
   }
 
   RadioSettings  settings_;                                             // Radyo ayarları
   EventLoop&     loop_;                                                 // Çerçeve gelince uyandırılacak döngü
   BroadcastPeer  peer_;                                                 // Yayın eşi
+  bool           ready_ = false;                                        // Kurulum tamamlandı mı
   QueueHandle_t  queue_ = nullptr;                                      // Alma kuyruğu
   StaticQueue_t  queueControl_{};                                       // Kuyruk denetim bloğu, heap kullanılmaz
   std::array<uint8_t, kQueueLength * sizeof(ReceivedFrame)> queueStorage_{};  // Kuyruk belleği

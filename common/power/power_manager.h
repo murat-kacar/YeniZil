@@ -10,7 +10,7 @@ class PowerManager : public Component {                   // İşlemci güç aya
  public:
   explicit PowerManager(uint32_t cpuMhz) : cpuMhz_(cpuMhz) {}
 
-  void begin() override { setCpuFrequencyMhz(cpuMhz_); }
+  void begin() override { static_cast<void>(setCpuFrequencyMhz(cpuMhz_)); }  // Ayarlanamazsa işlemci varsayılan frekansta kalır: sadece tüketim artar
   void update(uint64_t) override {}
 
  private:

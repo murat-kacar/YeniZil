@@ -31,7 +31,9 @@ Depoda sadece şu beş işi yapan C++ kodu bulunur:
 4. **Denetimler:** basış kuralları, çerçeve denetimi, ayar ve kablolama için derleme anı `static_assert`'leri.
 5. **Optimizasyonlar:** tekrar gelen kopyaların şifre çözülmeden atılması gibi.
 
-Test kodu, tezgâh (bench) programı, yardımcı betik ve seri monitör çıktısı (log) yazılmaz. Derleme, karta yükleme ve deneme Arduino IDE ile kullanıcı tarafından yapılır. Bir sorun çıkarsa ilgili test o zaman ayrıca istenir.
+Test kodu, tezgâh (bench) programı, yardımcı betik ve seri monitör çıktısı (log) yazılmaz. Kod değişiklikleri `arduino-cli compile` ile derlenerek doğrulanır. Derleme klasörü IDE'ninkinden ayrı ve kalıcıdır (`%LOCALAPPDATA%\arduino\claude-build\`), önbellekle bir derleme ~15–20 sn sürer. Karta yükleme `arduino-cli upload` ile, sadece kullanıcı istediğinde yapılır. Kartların fiziksel denemesi kullanıcıdadır. Bir sorun çıkarsa ilgili test o zaman ayrıca istenir.
+
+OOP, SOLID, DRY ve tasarım kalıpları, evrensel olarak benzer işlerde yerleşik standartlarda belirtildiği şekilde uygulanır (ör. IEEE 802.15.4, RFC 6347, Google C++ Style, C++ Core Guidelines).
 
 Her şey **Arduino-first**: önce Arduino-ESP32 core'un API ve kütüphaneleri kullanılır. ESP-IDF ya da FreeRTOS çağrısı sadece Arduino karşılığı yoksa kullanılır. Hazır kütüphane yoksa ya da mevcut olanlar güvenilmezse kod elle yazılır. Hangisinin nerede kullanıldığı 5.2'de.
 
@@ -390,6 +392,8 @@ Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örnekler: kopya
 
 ## 5. Konvansiyonlar
 
+Kodlama kurallarının tam ve güncel listesi proje kökündeki `CLAUDE.md` dosyasında. Bu bölüm kuralların gerekçesini anlatır.
+
 **Yazım kuralları:**
 - Tanımlayıcılar İngilizce, açıklamalar Türkçe ve sadece satır sonunda.
 - Sabitler: `kPascalCase`, namespace içinde `inline constexpr`. `#define` kullanılmıyor.
@@ -427,6 +431,7 @@ Derleyici GCC 14.2, C++20 modunda. Her araç sadece gerçekten işe yaradığı 
 | Fonksiyon template'i (`consteval`) | `allUnique(items, key)` | Aynı denetim iki alanda: buton pinleri, daire numaraları (DRY) |
 | Fonksiyon template'i (concept kısıtlı) | `writeLe<T>` / `readLe<T>` | Her tamsayı genişliği için tek kod, işaretsiz olmayan tipler derlenmez |
 | `std::bit_cast`, `std::endian` | `byte_order.h` | Bayt dönüşümü standart kütüphaneyle, little-endian varsayımı derleme anında denetlenir |
+| Güçlü tip (`enum class X : uint8_t {}`, `std::byte` kalıbı) | `NodeId`, `ApartmentId`, `FrameCounter` | Kimlik, pin ve sayaçlar birbirine karışırsa derlenmez |
 | `std::array` | Tekrar pencereleri, MAC adresi, çerçeve | Sabit boyut, heap yok |
 | `std::optional` | `SecureChannel::seal/open()`, `loadRxCounter()` | "Sonuç yok" durumunu tipin kendisi ifade eder |
 | `std::span` | Bayt tamponları, çerçeve alanları | İşaretçi + uzunluk çiftinin güvenli karşılığı |

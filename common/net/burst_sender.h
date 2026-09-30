@@ -22,7 +22,7 @@ class BurstSender : public Component {                                  // Çer�
   void update(uint64_t nowMs) override {                                // Zamanı gelen kopyaları gönderir
     for (Burst& burst : bursts_) {
       if (burst.remaining == 0 || nowMs < burst.nextSendMs) continue;
-      radio_.send(std::span<const uint8_t>(burst.bytes.data(), burst.length));
+      static_cast<void>(radio_.send(std::span<const uint8_t>(burst.bytes.data(), burst.length)));  // Tek kopyanın kaybı sorun değil: kalan kopyalar gider
       burst.nextSendMs = nowMs + settings_.intervalMs;
       --burst.remaining;
     }
@@ -35,9 +35,9 @@ class BurstSender : public Component {                                  // Çer�
     return deadlineMs;
   }
 
-  bool send(std::span<const uint8_t> bytes) { return start(bytes, 0); }  // Kendi çerçevesini hemen tekrarlamaya başlar
+  [[nodiscard]] bool send(std::span<const uint8_t> bytes) { return start(bytes, 0); }  // Kendi çerçevesini hemen tekrarlamaya başlar
 
-  bool relay(std::span<const uint8_t> bytes) {                          // Başkasının çerçevesini rastgele kısa bir beklemeden sonra tekrarlar
+  [[nodiscard]] bool relay(std::span<const uint8_t> bytes) {                          // Başkasının çerçevesini rastgele kısa bir beklemeden sonra tekrarlar
     return start(bytes, static_cast<uint32_t>(random(settings_.relayJitterMaxMs + 1)));  // Arduino random(): Wi-Fi açıkken donanım RNG
   }
 

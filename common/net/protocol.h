@@ -6,11 +6,14 @@
 
 namespace yenizil {
 
-using NodeId     = uint8_t;                               // Ünite kimliği (mantıksal adres): 0 dış ünite, daireler 1..kFlatCount
+enum class NodeId : uint8_t {};                           // Ünite kimliği, güçlü tip (std::byte kalıbı): 0 dış ünite, daireler 1..kFlatCount
+enum class ApartmentId : uint32_t {};                     // Ağ (apartman) kimliği, güçlü tip
+enum class FrameCounter : uint32_t {};                    // Gönderenin çerçeve sayacı, güçlü tip
+
 using MacAddress = std::array<uint8_t, 6>;                // MAC adresi
 
-inline constexpr NodeId  kOutdoorUnitId   = 0;            // Dış ünite kimliği, daireler 1'den başlar
-inline constexpr NodeId  kAllUnitsId      = 0xFF;         // Herkese: tüm üniteler teslim alır ve aktarır
+inline constexpr NodeId  kOutdoorUnitId{0};               // Dış ünite kimliği, daireler 1'den başlar
+inline constexpr NodeId  kAllUnitsId{0xFF};               // Herkese: tüm üniteler teslim alır ve aktarır
 inline constexpr uint8_t kProtocolVersion = 2;            // Çerçeve biçimi sürümü
 
 enum class MessageType : uint8_t {                        // Mesaj tipi
@@ -34,11 +37,11 @@ constexpr bool matchesAddressing(MessageType type, NodeId destination) {  // Her
 }
 
 struct Message {                                          // Doğrulanmış mesaj
-  MacAddress  sourceMac;                                  // Gönderen kartın MAC adresi: tekrar koruması buna göre
-  NodeId      source;                                     // Gönderen ünite
-  NodeId      destination;                                // Hedef ünite
-  uint32_t    counter;                                    // Gönderenin sayacı
-  MessageType type;                                       // Mesaj tipi
+  MacAddress   sourceMac;                                 // Gönderen kartın MAC adresi: tekrar koruması buna göre
+  NodeId       source;                                    // Gönderen ünite
+  NodeId       destination;                               // Hedef ünite
+  FrameCounter counter;                                   // Gönderenin sayacı
+  MessageType  type;                                      // Mesaj tipi
 };
 
 }  // namespace yenizil
