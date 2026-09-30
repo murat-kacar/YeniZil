@@ -27,7 +27,7 @@ Depoda sadece şu beş işi yapan C++ kodu bulunur:
 
 1. **İşin kendisi:** buton okuma, zil ve röle tetiği, ESP-NOW ile mesajlaşma ve aktarma.
 2. **Güvenlik:** AES-128-CCM, tekrar koruması, kalıcı sayaçlar.
-3. **Güç tasarrufu:** modem uykusu ve uyanma penceresi, 80 MHz CPU, boşta WFI.
+3. **Güç tasarrufu:** 80 MHz CPU, boşta WFI.
 4. **Denetimler:** basış kuralları, çerçeve denetimi, ayar ve kablolama için derleme anı `static_assert`'leri.
 5. **Optimizasyonlar:** tekrar gelen kopyaların şifre çözülmeden atılması gibi.
 
@@ -43,26 +43,19 @@ Her şey **Arduino-first**: önce Arduino-ESP32 core'un API ve kütüphaneleri k
 - "Kapı sadece zil çaldıktan sonra açılabilsin" kuralı
 - Zaman senkronizasyonu (FTSP)
 - OTA güncelleme ve flash şifreleme
-- Otomatik hafif uyku (ESP-IDF'e geçiş gerektirir, bkz. Karar 1)
+- Radyo uykusu (duty cycle) ve otomatik hafif uyku: pil gündeme gelirse, ESP-IDF'e geçişle (bkz. Karar 1)
 
 ---
 
 ## 2. Kararlar
 
-### Karar 1 — Güç: modem uykusu + uyanma penceresi
+### Karar 1 — Güç: radyo sürekli dinliyor, işlemci 80 MHz
 
-Kurulu core'un `sdkconfig` dosyasında:
-- `CONFIG_PM_ENABLE` kapalı. Yani işlemci boştayken otomatik uykuya geçemiyor.
-- `CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=y`. Yani ESP-NOW uyanma penceresi çalışıyor.
+Üniteler adaptörle besleniyor. Radyoyu uyutmak (duty cycle) ünite başına ~0,3 W kazandırıyordu, ama karşılığında her mesajın 420 ms boyunca ~42 kopya tekrarlanması, kat başına 200 ms'ye kadar gecikme ve pencere, aralık ve tekrar süresinin birbirine göre hesaplandığı bir radyo katmanı gerekiyordu. Kazanç, adaptörün kendi boştaki kaybından (0,1–0,3 W) büyük değildi.
 
-Beklenen tüketim (C3 datasheet: alım 84 mA, 80 MHz'de modem-sleep ve işlemci boşta 13–18 mA):
+Beklenen tüketim (C3 datasheet: alım 84 mA, 80 MHz'de işlemci boşta 13–18 mA): ünite başına ortalama ≈ 85–100 mA, ≈ 0,45 W. 300 mA'lik adaptör için yeterli.
 
-| Mod | Ortalama akım | Güç (≈) |
-|---|---|---|
-| Sürekli dinleme | ≈ 85–100 mA | ≈ 0,45 W |
-| %10 pencere | 0,1 × 84 + 0,9 × 13–18 ≈ **22–25 mA** | ≈ **0,12 W** |
-
-**Karar:** Radyo modem uykusunda. 200 ms'de bir 20 ms uyanıp dinliyor. İşlemci boşta WFI ile bekliyor. Tüketim yaklaşık 3,5 kat düşüyor ve ısınma ihmal edilebilir hale geliyor.
+**Karar:** Modem uykusu kapalı, radyo sürekli dinliyor. İşlemci 80 MHz'de çalışıyor (Wi-Fi'ın izin verdiği en düşük frekans) ve boşta WFI ile bekliyor. Otomatik hafif uyku bu core'da kapalı (`CONFIG_PM_ENABLE`). Pil ya da güneş paneli gündeme gelirse duty cycle, hafif uyku ve senkronlu pencereler birlikte, ESP-IDF'e geçerek ele alınır.
 
 ### Karar 2 — Dış ünite ESP'si bina içinde
 
@@ -118,11 +111,11 @@ Buton denetimlerinin hepsi bir basışın sayısal sınırları: en kısa süre,
 
 **Karar:** Butonlar 5 ms'de bir okunuyor (Ganssle: 1–5 ms). İşlemci otomatik uykuya geçmediği için (Karar 1) ek maliyeti yok. Kesme ve uyku seviyesi değişikliğinden gelen karmaşıklık da ortadan kalkıyor.
 
-### Karar 10 — Burst süresi
+### Karar 10 — Her çerçeve 3 kez gönderiliyor
 
-Tek çerçevenin bir kat geçişinde ulaşma oranı %90 ise, alıcının 1 pencerede 2 kopya gördüğü durumda kat başına kaçırma %1, 4 katta ≈ %4 olur.
+ESP-NOW yayınları onaysız: gönderen çerçevenin ulaşıp ulaşmadığını bilmiyor. Tek bir kopyanın bir kat geçişinde ulaşma oranı %90 ise, tek gönderimde kat başına kaçırma %10, 4 katta ≈ %35 olur.
 
-**Karar:** Burst süresi = 2 × aralık + pencere = **420 ms**. Alıcı 2 pencere, her pencerede 2 kopya görüyor. Kaçırma kat başına %0,01, 4 katta ≈ %0,04. Gecikme değişmiyor, çünkü mesaj yine ilk pencerede yakalanıyor.
+**Karar:** Her çerçeve 20 ms arayla 3 kez gönderiliyor, aktaranlar da aynı şekilde (BLE Mesh'in ağ tekrarı gibi). Kat başına kaçırma 0,1³ = %0,1, 4 katta ≈ %0,4. Radyo sürekli dinlediği için mesaj genelde ilk kopyada yakalanıyor, gecikme kat başına birkaç ms.
 
 ### Karar 11 — Yüklemeden önce değişen değerler tek dosyada
 
@@ -145,7 +138,7 @@ Gönderici her mesajda sayacı flash'a yazmıyor. 1000'lik bir rezervin sonunu y
 
 ### Karar 14 — Radyo ayarları radyonun işi
 
-TX gücü, Long Range, kanal, uyanma aralığı ve penceresi `RadioSettings` içinde, `EspNowRadio` tarafından uygulanıyor. Tekrarlı gönderimin ayarları `BurstSettings` içinde, `BurstSender` tarafından uygulanıyor. `PowerManager` sadece CPU frekansını yönetiyor. Böylece bileşenler arasında başlatma sırası bağımlılığı kalmıyor.
+TX gücü, Long Range ve kanal `RadioSettings` içinde, `EspNowRadio` tarafından uygulanıyor. Tekrarlı gönderimin ayarları `BurstSettings` içinde, `BurstSender` tarafından uygulanıyor. `PowerManager` sadece CPU frekansını yönetiyor. Böylece bileşenler arasında başlatma sırası bağımlılığı kalmıyor.
 
 ### Karar 15 — Watchdog
 
@@ -153,7 +146,7 @@ TX gücü, Long Range, kanal, uyanma aralığı ve penceresi `RadioSettings` iç
 
 ### Karar 16 — Kopyalar şifre çözülmeden atılıyor (optimizasyon)
 
-Her mesaj burst yüzünden ~40 kopya geliyor. Tekrar penceresi salt okunur olarak AES'ten **önce** kontrol ediliyor, görülmüş kopya şifre çözülmeden atılıyor. Pencere sadece doğrulanmış çerçeveyle ilerlediği için bu sıralama Karar 6'daki DoS riskini doğurmuyor.
+Her mesaj gönderenden ve her aktarıcıdan 3'er kopya geliyor. Tekrar penceresi salt okunur olarak AES'ten **önce** kontrol ediliyor, görülmüş kopya şifre çözülmeden atılıyor. Pencere sadece doğrulanmış çerçeveyle ilerlediği için bu sıralama Karar 6'daki DoS riskini doğurmuyor.
 
 ### Karar 17 — Log yok
 
@@ -163,7 +156,7 @@ Her mesaj burst yüzünden ~40 kopya geliyor. Tekrar penceresi salt okunur olara
 
 Flooding ağında sürekli bir bağlantı yok, mesaj sadece olay olunca gidiyor. İç ünitenin "bağlıyım" diyebilmesi için düzenli bir sinyal gerekiyor.
 
-**Karar:** Dış ünite her 30 sn'de bir, açılışta da hemen, herkese (`kAllUnitsId`) doğrulanmış bir heartbeat yayınlıyor. Her ünite bunu teslim alıp aktarıyor, böylece üst katlara da ulaşıyor. İç ünite 95 sn (3 kaçırılan yayın + pay) boyunca heartbeat alamazsa bağlantıyı kopmuş sayıyor. Bağlantı LED'i bağlıyken sürekli yanıyor, bağlantı yokken yanıp sönüyor. Heartbeat bir eylem değil. Bu yüzden sayacı flash'a yazılmıyor, flash aşınmıyor. Maliyeti her ünitenin 30 sn'de bir 420 ms'lik bir burst göndermesi (radyo gönderimi %1,4).
+**Karar:** Dış ünite her 30 sn'de bir, açılışta da hemen, herkese (`kAllUnitsId`) doğrulanmış bir heartbeat yayınlıyor. Her ünite bunu teslim alıp aktarıyor, böylece üst katlara da ulaşıyor. İç ünite 95 sn (3 kaçırılan yayın + pay) boyunca heartbeat alamazsa bağlantıyı kopmuş sayıyor. Bağlantı LED'i bağlıyken sürekli yanıyor, bağlantı yokken yanıp sönüyor. Heartbeat bir eylem değil. Bu yüzden sayacı flash'a yazılmıyor, flash aşınmıyor. Maliyeti her ünitenin 30 sn'de bir 3 kopya göndermesi.
 
 ---
 
@@ -219,7 +212,7 @@ YeniZil/
 │   ├── config/
 │   │   ├── building_config.h       daire sayısı
 │   │   ├── radio_settings.h        RadioSettings, BurstSettings tipleri
-│   │   ├── radio_config.h          kanal, güç, Long Range, pencere, aralık, burst
+│   │   ├── radio_config.h          kanal, güç, Long Range, tekrar sayısı ve aralığı
 │   │   ├── press_settings.h        PressSettings tipi
 │   │   ├── input_config.h          basış sınırları
 │   │   ├── link_config.h           heartbeat aralığı, bağlantı zaman aşımı
@@ -259,8 +252,8 @@ YeniZil/
 | `frame` | core | Çerçeveyi bayt bayt yazar ve okur, nonce üretir, alanlara `std::span` verir | `encodeHeader()`, `decodeHeader()`, `nonce()`, `header()`, `payload()`, `tag()` |
 | `nodes` | denetim | Ünite sayısı, daire numarası ve hedef denetimleri | `kNodeCount`, `isFlatId()`, `isDestination()` |
 | `BroadcastPeer` | platform | Arduino `ESP_NOW_Peer`'den türeyen yayın eşi, Long Range hızıyla | `begin()`, `send(bytes)` |
-| `EspNowRadio` | platform | Wi-Fi/ESP-NOW başlatma, kanal, TX gücü, Long Range, modem uykusu ve uyanma penceresi, tek kopya gönderim, alma kuyruğu | `send(bytes)`, `bool receive(frame)`, `ownMac()` |
-| `BurstSender` | servis | Çerçeveyi süre boyunca aralıklarla tekrar gönderir. Aktarmada kısa rastgele bekleme. | `send(bytes)`, `relay(bytes)` |
+| `EspNowRadio` | platform | Wi-Fi/ESP-NOW başlatma, kanal, TX gücü, Long Range, sürekli dinleme, tek kopya gönderim, alma kuyruğu | `send(bytes)`, `bool receive(frame)`, `ownMac()` |
+| `BurstSender` | servis | Çerçeveyi 20 ms arayla 3 kez gönderir. Aktarmada kısa rastgele bekleme. | `send(bytes)`, `relay(bytes)` |
 | `CcmCipher` | platform | AES-128-CCM (mbedTLS) | `bool begin()`, `bool seal(...)`, `bool open(...)` |
 | `ReplayWindow` | core | 64'lük kayan pencere | `isFresh()`, `markSeen()`, `restore()` |
 | `CounterStore` | platform | NVS (`Preferences`): gönderme sayacı rezervi, gönderen MAC başına son eylem sayacı | `begin()`, `loadTxReserve()`, `saveTxReserve()`, `loadRxCounter()`, `saveRxCounter()` |
@@ -321,7 +314,7 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 → ButtonGroup → intercom.ringFlat(3)
 → FloodRouter.send(3, kRingBell)
 → SecureChannel.seal: sayaç+1, AES-CCM
-→ BurstSender: 420 ms burst, 10 ms'de bir ─────────────────→ pencere yakalar
+→ BurstSender: 3 kopya, 20 ms arayla ─────────────────────→ ilk kopyayı alır
                                                               denetle, doğrula
                                                               hedef ≠ ben → aktar ────→ …
                                                                                         …aktar ─────→ doğrula
@@ -378,13 +371,11 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | Zil darbesi | 1,5 sn (1–2 sn) | indoor.h | Gereksinim |
 | Zil bekleme süresi | 3 sn | outdoor.h | 1,5 sn darbe + 1,5 sn sessizlik |
 | Kapı isteği bekleme süresi | 2 sn | indoor.h | Mühendislik tercihi |
-| Heartbeat aralığı | 30 sn (≥ 10 sn) | link_config.h | Her yayın tüm üniteleri 420 ms gönderime sokuyor |
+| Heartbeat aralığı | 30 sn (≥ 10 sn) | link_config.h | Her yayın tüm ünitelerde aktarma trafiği yaratıyor |
 | Bağlantı zaman aşımı | 95 sn (türetilmiş) | link_config.h | 3 × aralık + 5 sn: tek kaçırılan yayın LED'i düşürmez |
 | LED yanıp sönme | 0,5 sn yanık / 0,5 sn sönük | indoor.h | Belirgin, göz yormayan hız |
-| Uyanma aralığı | 200 ms | radio_config.h | Espressif: "100'ün katları önerilir" (`esp_wifi.h`) · 4 kat en kötü 0,8 sn |
-| Uyanma penceresi | 20 ms | radio_config.h | %10 hedefi · burst periyodunun 2 katı |
-| Burst periyodu | 10 ms | radio_config.h | Pencere başına ≥ 2 kopya |
-| Burst süresi | 420 ms (türetilmiş) | radio_config.h | 2 × aralık + pencere (Karar 10) |
+| Tekrar sayısı | 3 kopya (1–5) | radio_config.h | Onaysız yayında 4 katta kaçırma ≈ %0,4 (Karar 10) |
+| Tekrar aralığı | 20 ms | radio_config.h | Kısa bir parazit iki kopyayı birden bozmasın |
 | Aktarma gecikmesi (jitter) | 0–10 ms rastgele | radio_config.h | Aktarıcılar arasında çakışmayı azaltır |
 | Tekrar penceresi | 64 | replay_window.h | RFC 6347 / RFC 4303 varsayılanı |
 | Sayaç rezervi | 1000 | secure_channel.h | OpenThread `STORE_FRAME_COUNTER_AHEAD` varsayılanı |
@@ -393,7 +384,7 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | TX gücü | 8 dBm (başlangıç), Long Range açık | radio_config.h | Super Mini anten raporları. Menzil yetmezse artırılır. |
 | Watchdog | 5 sn, bekleme ≤ 1 sn | event_loop.h | sdkconfig |
 
-Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örnekler: pencere < aralık, burst periyodu ≤ pencere / 2, en kısa basış < en uzun basış, aynı pine iki eleman bağlanamaz, pinler strapping/USB/UART pinine denk gelemez, daire butonu olmayan bir daireye bağlanamaz, apartman kimliği ve anahtarı sıfır olamaz. Yanlış bir değer girildiğinde program derlenmez.
+Sınırlar ayar dosyalarında `static_assert` ile denetleniyor. Örnekler: kopya sayısı 1–5, kanal 1–13, en kısa basış < en uzun basış, aynı pine iki eleman bağlanamaz, pinler strapping/USB/UART pinine denk gelemez, daire butonu olmayan bir daireye bağlanamaz, apartman kimliği ve anahtarı sıfır olamaz. Yanlış bir değer girildiğinde program derlenmez.
 
 ---
 
@@ -459,7 +450,7 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 
 | İş | API |
 |---|---|
-| Wi-Fi modu, Long Range, modem uykusu, kanal, TX gücü, MAC adresi | `WiFi` (`enableLongRange`, `mode`, `setSleep`, `setChannel`, `setTxPower`, `macAddress`) |
+| Wi-Fi modu, Long Range, sürekli dinleme, kanal, TX gücü, MAC adresi | `WiFi` (`enableLongRange`, `mode`, `setSleep`, `setChannel`, `setTxPower`, `macAddress`) |
 | ESP-NOW başlatma, yayın eşi ve Long Range hızı, alma | `ESP_NOW` (`ESP_NOW.begin`, `ESP_NOW_Peer`, `onNewPeer`) |
 | Kalıcı sayaçlar | `Preferences` (NVS) |
 | Rastgele aktarma gecikmesi | `random()` (Wi-Fi açıkken donanım RNG) |
@@ -471,7 +462,6 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 
 | İş | API | Neden |
 |---|---|---|
-| ESP-NOW uyanma penceresi ve aralığı | `esp_now_set_wake_window`, `esp_wifi_connectionless_module_set_wake_interval` | Arduino `WiFi` ve `ESP_NOW` bu ayarları sunmuyor |
 | 64-bit zaman | `esp_timer_get_time` | Arduino `millis()` 32-bit, 49,7 günde taşar (Karar 8) |
 | Çıkışı açmadan önce pasif seviye yazmak | `gpio_set_level` | Arduino 3.x'te `digitalWrite()` `pinMode()`'dan önce çalışmıyor, açılışta röle titreyebilirdi |
 | AES-128-CCM | mbedTLS `mbedtls_ccm_*` | Arduino core'da AES-CCM sarmalayıcısı yok. mbedTLS core'la birlikte geliyor, C3'te donanım AES kullanıyor. |
@@ -508,7 +498,7 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 - Kapı rölesi 3.3V ile tetikleniyor ve kendi izole güç beslemesi var. ESP sadece tetik girişini sürüyor.
 - Kendi bağlanan her LED'e 240 Ω seri direnç şart: bağlantı LED'i, röle ya da zil yerine takılan test LED'i. 3.3V'ta akım renge göre ~1–5 mA olur. Pin-GND arasındaki 10k pull-down akımı sınırlamaz. Dirençsiz LED pinden aşırı akım çeker, çipi ısıtır ve pini bozabilir (yük testinde dış ünitede yaşandı).
 - Dış ünitenin ESP'si ve kapı rölesi tetiği bina içinde, sadece butonlar dışarıda (Karar 2). Anahtar dışarıdan erişilebilir olmadığı için flash şifrelemeye ve ESP-IDF'e geçişe gerek yok.
-- Her ünite 5V 300 mA adaptörle besleniyor. Ortalama tüketim ~25 mA. Gönderim anında tepe akım 8 dBm'de tahminen 150–200 mA. Anlık düşüşlere karşı kartın 5V ve GND uçları arasına 470 µF elektrolitik kondansatör önerilir. TX gücü 14 dBm'in üstüne çıkarılacaksa en az 500 mA'lik adaptör gerekir.
+- Her ünite 5V 300 mA adaptörle besleniyor. Ortalama tüketim ~85–100 mA (radyo sürekli dinliyor). Gönderim anında tepe akım 8 dBm'de tahminen 150–200 mA. Anlık düşüşlere karşı kartın 5V ve GND uçları arasına 470 µF elektrolitik kondansatör önerilir. TX gücü 14 dBm'in üstüne çıkarılacaksa en az 500 mA'lik adaptör gerekir.
 
 **Açık kalan:**
 1. Dışarıdaki buton hatları için koruma: her butonun pini ile kablosu arasına 1 kΩ seri direnç, pin ile GND arasına 100 nF kondansatör. Uzun kablo anten gibi davranıp statik elektrik ve parazit toplar. Direnç pine giden akımı sınırlar, kondansatör kısa sıçramaları yutar. Yazılım 50 ms'den kısa basışları zaten yok sayıyor, bu donanım önlemi daha çok pini korumak için.
@@ -519,7 +509,6 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 
 - ESP32-C3 datasheet (güç tüketimi): https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf
 - Kurulu core yapılandırması: `%LOCALAPPDATA%/Arduino15/packages/esp32/tools/esp32c3-libs/3.3.12/sdkconfig`
-- `esp_wifi.h` / `esp_now.h` (uyanma aralığı ve penceresi notları): aynı klasörde `include/esp_wifi/include/`
 - Ganssle, A Guide to Debouncing: https://www.ganssle.com/debouncing.htm · https://www.ganssle.com/debouncing-pt2.htm
 - IEC 61000-4-4 EFT/Burst: https://en.wikipedia.org/wiki/IEC_61000-4-4
 - Tuş basılı tutma süreleri: https://wraitor.io/learn/keystroke-dynamics

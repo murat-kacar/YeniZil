@@ -13,7 +13,7 @@
 
 namespace yenizil {
 
-class BurstSender : public Component {                                  // Çerçeveyi süre boyunca aralıklarla tekrar gönderir: uyku penceresindeki alıcılar yakalar
+class BurstSender : public Component {                                  // Çerçeveyi birkaç kez aralıklarla gönderir: onaysız yayında tek bir kayıp mesajı düşürmez
  public:
   static constexpr std::size_t kMaxBursts = 4;                          // Aynı anda tekrarlanan en fazla çerçeve
 
@@ -21,17 +21,17 @@ class BurstSender : public Component {                                  // Çer�
 
   void update(uint64_t nowMs) override {                                // Zamanı gelen kopyaları gönderir
     for (Burst& burst : bursts_) {
-      if (!burst.active || nowMs < burst.nextSendMs) continue;
+      if (burst.remaining == 0 || nowMs < burst.nextSendMs) continue;
       radio_.send(std::span<const uint8_t>(burst.bytes.data(), burst.length));
-      burst.nextSendMs = nowMs + settings_.periodMs;
-      if (burst.nextSendMs > burst.endMs) burst.active = false;
+      burst.nextSendMs = nowMs + settings_.intervalMs;
+      --burst.remaining;
     }
   }
 
   uint64_t nextDeadlineMs() const override {
     uint64_t deadlineMs = kNoDeadlineMs;
     for (const Burst& burst : bursts_)
-      if (burst.active) deadlineMs = std::min(deadlineMs, burst.nextSendMs);
+      if (burst.remaining > 0) deadlineMs = std::min(deadlineMs, burst.nextSendMs);
     return deadlineMs;
   }
 
@@ -46,19 +46,17 @@ class BurstSender : public Component {                                  // Çer�
     std::array<uint8_t, ReceivedFrame::kMaxBytes> bytes{};              // Çerçeve
     uint8_t  length     = 0;                                            // Çerçeve uzunluğu
     uint64_t nextSendMs = 0;                                            // Sıradaki kopyanın zamanı
-    uint64_t endMs      = 0;                                            // Tekrarın bittiği an
-    bool     active     = false;                                        // Tekrarlanıyor mu
+    uint8_t  remaining  = 0;                                            // Gönderilecek kopya sayısı, 0: yuva boş
   };
 
   bool start(std::span<const uint8_t> bytes, uint32_t delayMs) {       // Boş bir yuvada tekrarı başlatır
     if (bytes.size() > ReceivedFrame::kMaxBytes) return false;
-    const auto slot = std::find_if(bursts_.begin(), bursts_.end(), [](const Burst& burst) { return !burst.active; });
+    const auto slot = std::find_if(bursts_.begin(), bursts_.end(), [](const Burst& burst) { return burst.remaining == 0; });
     if (slot == bursts_.end()) return false;                            // Tüm yuvalar dolu
     std::ranges::copy(bytes, slot->bytes.begin());
     slot->length     = static_cast<uint8_t>(bytes.size());
     slot->nextSendMs = monotonicMs() + delayMs;
-    slot->endMs      = slot->nextSendMs + settings_.durationMs;
-    slot->active     = true;
+    slot->remaining  = settings_.copies;
     return true;
   }
 

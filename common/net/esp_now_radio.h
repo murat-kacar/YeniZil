@@ -3,7 +3,6 @@
 #include <ESP32_NOW.h>
 #include <WiFi.h>
 #include <esp_now.h>
-#include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <algorithm>
@@ -26,7 +25,7 @@ struct ReceivedFrame {                                                  // Alın
   std::array<uint8_t, kMaxBytes> bytes{};                               // Veri
 };
 
-class EspNowRadio : public Component {                                  // ESP-NOW radyo: Wi-Fi'ı ve modem uykusunu ayarlar, tek kopya gönderir, alınanları kuyruğa koyar
+class EspNowRadio : public Component {                                  // ESP-NOW radyo: Wi-Fi'ı ayarlar, sürekli dinler, tek kopya gönderir, alınanları kuyruğa koyar
  public:
   static constexpr std::size_t kQueueLength = 8;                        // Alma kuyruğu uzunluğu (çerçeve)
 
@@ -36,14 +35,12 @@ class EspNowRadio : public Component {                                  // ESP-N
     queue_ = xQueueCreateStatic(kQueueLength, sizeof(ReceivedFrame), queueStorage_.data(), &queueControl_);
     WiFi.enableLongRange(settings_.longRange);                          // mode()'dan önce verilmeli
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(WIFI_PS_MIN_MODEM);                                   // Modem uykusu: radyo sadece uyanma penceresinde açık
+    WiFi.setSleep(false);                                               // Modem uykusu kapalı: radyo sürekli dinler, mesaj ilk kopyada yakalanır
     WiFi.setChannel(settings_.channel);
     WiFi.setTxPower(static_cast<wifi_power_t>(settings_.txPowerDbm * 4));  // Sürücü 0,25 dBm birimi kullanır
     if (!ESP_NOW.begin()) return;
     ESP_NOW.onNewPeer(&EspNowRadio::onReceive, this);                   // Göndericiler eş olarak eklenmez, tüm çerçeveler buraya gelir
-    if (!peer_.begin()) return;
-    esp_now_set_wake_window(settings_.wakeWindowMs);                    // Her aralıkta bu kadar dinler (Arduino karşılığı yok)
-    esp_wifi_connectionless_module_set_wake_interval(settings_.wakeIntervalMs);  // Uyanma aralığı (Arduino karşılığı yok)
+    peer_.begin();                                                      // Eklenemezse sadece gönderim çalışmaz, alma sürer
   }
 
   void update(uint64_t) override {}
