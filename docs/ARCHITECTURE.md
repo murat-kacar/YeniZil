@@ -503,11 +503,14 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 
 ## 7. Senin kararını bekleyenler (donanım)
 
-1. Dış ünite ESP'si bina içine alınacak mı? (Karar 2)
-2. Kanarya zil 220V ile mi çalışıyor? Öyleyse izolasyonlu, 3.3V ile tetiklenebilen (high-level trigger) bir röle modülü gerekir.
-3. Kapı rölesinin girişi nasıl: ortak GND mi, optokuplör mü? Ne kadar akım çekiyor?
-4. Dışarıdaki uzun buton hatları için RC filtre önerisi: pin ile buton arasına 1 kΩ seri direnç, pin ile GND arasına 100 nF kondansatör.
-5. Adaptör: kaliteli ve en az 1 A. Yüksek TX gücünde anlık akım yüzlerce mA'e çıkabiliyor, ucuz adaptörler brownout'a yol açar.
+**Kararlaşanlar:**
+- Zil 3.3V ile çalışıyor, en fazla 2,5 mA çekiyor ve iç ünitenin zil pininden (GPIO0) doğrudan besleniyor. GPIO pininin güvenli sınırı ~20 mA olduğu için sürücü devre gerekmiyor. Zil ileride daha güçlü bir modelle (> 20 mA ya da bobinli) değiştirilirse araya transistör/MOSFET ve flyback diyot konmalı.
+- Kapı rölesi 3.3V ile tetikleniyor ve kendi izole güç beslemesi var. ESP sadece tetik girişini sürüyor.
+- Dış ünitenin ESP'si ve kapı rölesi tetiği bina içinde, sadece butonlar dışarıda (Karar 2). Anahtar dışarıdan erişilebilir olmadığı için flash şifrelemeye ve ESP-IDF'e geçişe gerek yok.
+- Her ünite 5V 300 mA adaptörle besleniyor. Ortalama tüketim ~25 mA. Gönderim anında tepe akım 8 dBm'de tahminen 150–200 mA. Anlık düşüşlere karşı kartın 5V ve GND uçları arasına 470 µF elektrolitik kondansatör önerilir. TX gücü 14 dBm'in üstüne çıkarılacaksa en az 500 mA'lik adaptör gerekir.
+
+**Açık kalan:**
+1. Dışarıdaki buton hatları için koruma: her butonun pini ile kablosu arasına 1 kΩ seri direnç, pin ile GND arasına 100 nF kondansatör. Uzun kablo anten gibi davranıp statik elektrik ve parazit toplar. Direnç pine giden akımı sınırlar, kondansatör kısa sıçramaları yutar. Yazılım 50 ms'den kısa basışları zaten yok sayıyor, bu donanım önlemi daha çok pini korumak için.
 
 ---
 
