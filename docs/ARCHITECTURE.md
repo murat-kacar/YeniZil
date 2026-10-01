@@ -19,7 +19,7 @@ Sürüm 2 · 29.09.2026 · Durum: **kod tamam, donanım kurulumu bekliyor**
 |---|---|
 | Dış ünitede N. butona basılıp bırakıldı | N. dairenin zili 1,5 sn çalar |
 | N. dairede "kapıyı aç" butonuna basılıp bırakıldı | Kapı rölesi 1,5 sn tetiklenir |
-| İç ünite dış üniteyle bağlantıda | Bağlantı LED'i sürekli yanar, bağlantı yokken yanıp söner |
+| Dış üniteden heartbeat geldi (saniyede bir) | İç ünitenin bağlantı LED'i 10 ms yanar. Bağlantı yoksa LED hiç yanmaz |
 
 ### 1.2 Kodun kapsamı
 
@@ -158,7 +158,7 @@ Her mesaj gönderenden ve her aktarıcıdan 3'er kopya geliyor. Tekrar penceresi
 
 Flooding ağında sürekli bir bağlantı yok, mesaj sadece olay olunca gidiyor. İç ünitenin "bağlıyım" diyebilmesi için düzenli bir sinyal gerekiyor.
 
-**Karar:** Dış ünite her 30 sn'de bir, açılışta da hemen, herkese (`kAllUnitsId`) doğrulanmış bir heartbeat yayınlıyor. Her ünite bunu teslim alıp aktarıyor, böylece üst katlara da ulaşıyor. İç ünite 95 sn (3 kaçırılan yayın + pay) boyunca heartbeat alamazsa bağlantıyı kopmuş sayıyor. Bağlantı LED'i bağlıyken sürekli yanıyor, bağlantı yokken yanıp sönüyor. Heartbeat bir eylem değil. Bu yüzden sayacı flash'a yazılmıyor, flash aşınmıyor. Maliyeti her ünitenin 30 sn'de bir 3 kopya göndermesi.
+**Karar:** Dış ünite her 1 sn'de bir, açılışta da hemen, herkese (`kAllUnitsId`) doğrulanmış bir heartbeat yayınlıyor. Her ünite bunu teslim alıp aktarıyor, böylece üst katlara da ulaşıyor. İç ünite her heartbeat'te bağlantı LED'ini 10 ms yakıyor, LED'in ne zaman yanacağına dış ünite karar veriyor. Bağlıyken LED saniyede bir kısa yanıp söner. Bağlantı yoksa hiç yanmaz. İç ünitede zaman aşımı ya da "bağlı mıyım" durumu yok, kopukluk ilk kaçan yanıp sönmede görülüyor. Heartbeat bir eylem değil. Bu yüzden sayacı flash'a yazılmıyor, flash aşınmıyor. Maliyeti her ünitenin saniyede bir 3 kopya göndermesi: saniyede ~15 kısa çerçeve, kanalın ~%3'ü.
 
 ---
 
@@ -173,15 +173,14 @@ Flooding ağında sürekli bir bağlantı yok, mesaj sadece olay olunca gidiyor.
 │ Unit       outdoor.h           composition root:          │
 │            indoor.h            nesneleri kurar, ayar verir │
 ├─────────────────────────────────────────────────────────┤
-│ App        Intercom (ağı kurar) · Bell · DoorOpener       │
-│            LinkMonitor                       alan dili    │
+│ App        Intercom (ağı kurar) · Bell · DoorOpener  alan dili │
 ├─────────────────────────────────────────────────────────┤
 │ Services   FloodRouter · BurstSender · SecureChannel      │
-│            ButtonGroup · Button · PulseOutput · IndicatorLed │
+│            ButtonGroup · Button · PulseOutput             │
 ├─────────────────────────────────────────────────────────┤
 │ Platform   EspNowRadio · BroadcastPeer · CcmCipher        │
 │            CounterStore · PowerManager                    │
-│            (ESP-IDF / Arduino'ya dokunan tek katman)       │
+│            (radyo, şifreleme, flash, CPU sürücüleri)      │
 ├─────────────────────────────────────────────────────────┤
 │ Core       PressDetector · ReplayWindow · frame · protocol │
 │            (saf C++: Arduino/IDF include etmez)            │
@@ -217,14 +216,14 @@ YeniZil/
 │   │   ├── radio_config.h          kanal, güç, Long Range, tekrar sayısı ve aralığı
 │   │   ├── press_settings.h        PressSettings tipi
 │   │   ├── input_config.h          basış sınırları
-│   │   ├── link_config.h           heartbeat aralığı, bağlantı zaman aşımı
+│   │   ├── link_config.h           heartbeat aralığı
 │   │   └── power_config.h          CPU frekansı
 │   ├── kernel/   callback.h · clock.h · component.h · polling_component.h · periodic_timer.h · event_loop.h · byte_order.h · static_checks.h
-│   ├── io/       board_pins.h · digital_pin.h · button_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h · indicator_led.h
+│   ├── io/       board_pins.h · digital_pin.h · button_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h
 │   ├── net/      protocol.h · frame.h · nodes.h · broadcast_peer.h · esp_now_radio.h · burst_sender.h · flood_router.h
 │   ├── security/ ccm_cipher.h · replay_window.h · counter_store.h · secure_channel.h
 │   ├── power/    power_manager.h
-│   └── app/      intercom.h · bell.h · door_opener.h · link_monitor.h
+│   └── app/      intercom.h · bell.h · door_opener.h
 ├── docs/ARCHITECTURE.md
 └── .gitignore                      build/
 ```
@@ -247,8 +246,6 @@ YeniZil/
 | `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(Handler<>)` |
 | `ButtonGroup<N>` | servis | Kimlikli N buton (`ButtonPin` tablosu), olay kimlikle gelir | `onPress(Handler<uint8_t>)` |
 | `PulseOutput` | servis | Belirli süre aktif kalan çıkış. Aktifken gelen tetik yok sayılır. Açılışta titremeden pasife çekilir. | `activate()` |
-| `IndicatorLed` | servis | Sürekli yanan ya da yanıp sönen LED, pini sadece durum değişince yazar | `turnOn()`, `blink()` |
-| `LinkMonitor` | app | Süre içinde heartbeat geldiyse bağlı, gelmezse koptu. Açılışta kopuk. | `refresh()`, `onConnected()`, `onLost()` |
 | `Bell` / `DoorOpener` | app | Alan dilinde eylem (`PulseOutput` içerir) | `ring()` / `open()` |
 | `protocol` | core | `NodeId`, `MacAddress`, `MessageType`, `Message`, sürüm. Hangi tipin herkese gittiği burada. | `isKnownMessageType()`, `isBroadcast()`, `matchesAddressing()` |
 | `frame` | core | Çerçeveyi bayt bayt yazar ve okur, nonce üretir, alanlara `std::span` verir | `encodeHeader()`, `decodeHeader()`, `nonce()`, `header()`, `payload()`, `tag()` |
@@ -296,9 +293,7 @@ using namespace yenizil;  // Proje isim alanı
 void setup() {
   openDoorButton.onPress([] { intercom.requestDoorOpen(); });  // Kapıyı aç butonu -> dış üniteye istek
   intercom.onRing([] { bell.ring(); });                         // Zil isteği -> zil çalar
-  intercom.onHeartbeat([] { linkMonitor.refresh(); });          // Dış üniteden "buradayım" -> bağlantı var
-  linkMonitor.onConnected([] { linkLed.turnOn(); });            // Bağlantı sağlandı -> LED sürekli yanar
-  linkMonitor.onLost([] { linkLed.blink(); });                  // Bağlantı yok -> LED yanıp söner
+  intercom.onHeartbeat([] { linkLed.activate(); });             // Dış üniteden "buradayım" -> bağlantı LED'i kısa yanar
   eventLoop.begin();
 }
 
@@ -373,9 +368,8 @@ Buton 3 bırakıldı (50 ms–30 sn, bekleme süresi dolmuş)
 | Zil darbesi | 1,5 sn (1–2 sn) | indoor.h | Gereksinim |
 | Zil bekleme süresi | 3 sn | outdoor.h | 1,5 sn darbe + 1,5 sn sessizlik |
 | Kapı isteği bekleme süresi | 2 sn | indoor.h | Mühendislik tercihi |
-| Heartbeat aralığı | 30 sn (≥ 10 sn) | link_config.h | Her yayın tüm ünitelerde aktarma trafiği yaratıyor |
-| Bağlantı zaman aşımı | 95 sn (türetilmiş) | link_config.h | 3 × aralık + 5 sn: tek kaçırılan yayın LED'i düşürmez |
-| LED yanıp sönme | 0,5 sn yanık / 0,5 sn sönük | indoor.h | Belirgin, göz yormayan hız |
+| Heartbeat aralığı | 1 sn | link_config.h | Kopukluk birkaç saniyede fark edilsin, kanal yükü ~%3 |
+| Bağlantı LED darbesi | 10 ms | indoor.h | Her heartbeat'te kısa bir yanıp sönme. Heartbeat aralığından kısa olmalı |
 | Tekrar sayısı | 3 kopya (1–5) | radio_config.h | Onaysız yayında 4 katta kaçırma ≈ %0,4 (Karar 10) |
 | Tekrar aralığı | 20 ms | radio_config.h | Kısa bir parazit iki kopyayı birden bozmasın |
 | Aktarma gecikmesi (jitter) | 0–10 ms rastgele | radio_config.h | Aktarıcılar arasında çakışmayı azaltır |

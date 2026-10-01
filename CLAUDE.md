@@ -70,9 +70,9 @@ For every step-2 or step-4 use, add a row with the reason to `docs/ARCHITECTURE.
 |---|---|
 | Facade | `Intercom` builds and hides the network stack |
 | Template Method | `PollingComponent` (timing) → `poll()` in subclasses |
-| Observer (function-pointer callbacks) | `onPress`, `onRing`, `onHeartbeat`, `onTick`, `onConnected/onLost` |
+| Observer (function-pointer callbacks) | `onPress`, `onRing`, `onHeartbeat`, `onTick` |
 | Adapter | `BroadcastPeer` over Arduino `ESP_NOW_Peer` |
-| State machine (explicit `enum class` states) | `PressDetector`, `LinkMonitor`, `IndicatorLed` |
+| State machine (explicit `enum class` states) | `PressDetector` |
 | Reactor / cooperative scheduler | `EventLoop` |
 | Producer–Consumer | ESP-NOW receive callback → static FreeRTOS queue → loop |
 | Pipes and Filters (fixed order) | `SecureChannel::open` |
