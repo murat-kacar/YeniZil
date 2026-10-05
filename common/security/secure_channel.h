@@ -12,27 +12,26 @@
 #include "ccm_cipher.h"
 #include "counter_store.h"
 #include "replay_window.h"
+#include "tx_counter.h"
 
 namespace yenizil {
 
-class SecureChannel {                                     // Çerçeve üretir ve doğrular. Sabit sıra: ucuz denetimler → AES-CCM → tekrar penceresi. Tekrar koruması gönderen MAC'e göre (IEEE 802.15.4)
+class SecureChannel {                                     // Tek ağın çerçevelerini üretir ve doğrular. Sabit sıra: ucuz denetimler → AES-CCM → tekrar penceresi. Tekrar koruması gönderen MAC'e göre (IEEE 802.15.4)
  public:
-  static constexpr uint32_t    kCounterReserve = 1000;    // Sayaç rezervi: OpenThread STORE_FRAME_COUNTER_AHEAD varsayılanı
-  static constexpr std::size_t kMaxPeers       = 16;      // Bir açılışta izlenebilen en fazla gönderici kart
+  static constexpr std::size_t kMaxPeers = 16;            // Bir açılışta izlenebilen en fazla gönderici kart
 
-  SecureChannel(CcmCipher& cipher, CounterStore& store, ApartmentId apartmentId) : cipher_(cipher), store_(store), apartmentId_(apartmentId) {}
+  SecureChannel(CcmCipher& cipher, CounterStore& store, TxCounter& txCounter, NetworkId networkId)
+      : cipher_(cipher), store_(store), txCounter_(txCounter), networkId_(networkId) {}
 
-  [[nodiscard]] bool begin(const MacAddress& mac) {       // Kartın MAC'ini alır, anahtarı ve gönderme sayacını yükler, başarısızsa false
+  [[nodiscard]] bool begin(const MacAddress& mac) {       // Kartın MAC'ini alır, NVS'yi açar ve anahtarı yükler, başarısızsa false
     mac_ = mac;
-    if (!store_.begin() || !cipher_.begin()) return false;
-    nextCounter_  = store_.loadTxReserve();               // Yeniden başlamada rezervin sonundan devam: kullanılmış sayaç tekrar kullanılmaz
-    reservedUpTo_ = nextCounter_;
-    return true;
+    return store_.begin() && cipher_.begin();
   }
 
   [[nodiscard]] std::optional<frame::Bytes> seal(NodeId source, NodeId destination, MessageType type) {  // Yeni sayaçla şifreli ve imzalı çerçeve üretir
-    if (!reserveCounter()) return std::nullopt;
-    const frame::Header header{kProtocolVersion, apartmentId_, mac_, source, destination, FrameCounter{nextCounter_++}};
+    const std::optional<FrameCounter> counter = txCounter_.next();
+    if (!counter) return std::nullopt;                    // Sayaç yoksa gönderim yok: nonce tekrarlanmaz
+    const frame::Header header{kProtocolVersion, networkId_, mac_, source, destination, *counter};
     frame::Bytes bytes = frame::encodeHeader(header);
     const std::array<uint8_t, frame::kPayloadSize> plain = {toUnderlying(type)};
     if (!cipher_.seal(frame::nonce(header), frame::header(bytes), plain, frame::payload(bytes), frame::tag(bytes))) return std::nullopt;
@@ -41,7 +40,7 @@ class SecureChannel {                                     // Çerçeve üretir v
 
   [[nodiscard]] std::optional<Message> open(const frame::Bytes& bytes) {  // Gelen çerçeveyi denetler, geçerli ve yeniyse mesajı döndürür
     const frame::Header header = frame::decodeHeader(bytes);
-    if (header.version != kProtocolVersion || header.apartmentId != apartmentId_) return std::nullopt;  // Başka sürüm ya da komşu apartman
+    if (header.version != kProtocolVersion || header.networkId != networkId_) return std::nullopt;  // Başka sürüm, karttaki öteki ağ ya da komşu apartman
     if (header.sourceMac == mac_) return std::nullopt;    // Kendi yankısı
     if (!isNode(header.source) || !isDestination(header.destination)) return std::nullopt;  // Olmayan ünite
     if (const Peer* known = findPeer(header.sourceMac); known != nullptr && !known->window.isFresh(toUnderlying(header.counter))) return std::nullopt;  // Aynı mesajın başka kopyası: şifre çözmeden atılır
@@ -80,20 +79,11 @@ class SecureChannel {                                     // Çerçeve üretir v
     return &*slot;
   }
 
-  bool reserveCounter() {                                 // Sıradaki sayaç flash'taki rezervin içinde mi, değilse yeni rezerv kaydeder
-    if (nextCounter_ < reservedUpTo_) return true;
-    if (nextCounter_ > UINT32_MAX - kCounterReserve) return false;  // Sayaç tükendi: nonce tekrarı yerine gönderim durur, anahtar değiştirilmeli
-    if (!store_.saveTxReserve(nextCounter_ + kCounterReserve)) return false;  // Rezerv kaydedilemezse yeniden başlamada sayaç tekrar kullanılabilirdi
-    reservedUpTo_ = nextCounter_ + kCounterReserve;
-    return true;
-  }
-
-  CcmCipher&                    cipher_;                  // AES-CCM
-  CounterStore&                 store_;                   // Sayaç kalıcı kaydı
-  ApartmentId                   apartmentId_;             // Ağ (apartman) kimliği
+  CcmCipher&                    cipher_;                  // Bu ağın AES-CCM'i
+  CounterStore&                 store_;                   // Alıcı sayaçlarının kalıcı kaydı
+  TxCounter&                    txCounter_;               // Kartın gönderme sayacı, ağlar arasında ortak
+  NetworkId                     networkId_;               // Ağ kimliği
   MacAddress                    mac_{};                   // Bu kartın MAC adresi
-  uint32_t                      nextCounter_  = 0;        // Sıradaki gönderme sayacı
-  uint32_t                      reservedUpTo_ = 0;        // Flash'a kaydedilmiş rezervin sonu
   std::array<Peer, kMaxPeers>   peers_{};                 // Gönderici başına tekrar penceresi
 };
 

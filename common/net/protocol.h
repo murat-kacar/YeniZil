@@ -6,20 +6,21 @@
 
 namespace yenizil {
 
-enum class NodeId : uint8_t {};                           // Ünite kimliği, güçlü tip (std::byte kalıbı): 0 dış ünite, daireler 1..kFlatCount
-enum class ApartmentId : uint32_t {};                     // Ağ (apartman) kimliği, güçlü tip
+enum class NodeId : uint8_t {};                           // Ünite kimliği, güçlü tip (std::byte kalıbı): 0 kapı ünitesi, daireler 1..kFlatCount
+enum class NetworkId : uint32_t {};                       // Ağ kimliği, güçlü tip: bina ağı ve zil paneli bağlantısı ayrı
 enum class FrameCounter : uint32_t {};                    // Gönderenin çerçeve sayacı, güçlü tip
 
 using MacAddress = std::array<uint8_t, 6>;                // MAC adresi
 
-inline constexpr NodeId  kOutdoorUnitId{0};               // Dış ünite kimliği, daireler 1'den başlar
+inline constexpr NodeId  kDoorUnitId{0};                  // Kapı ünitesi (dış2) kimliği, daireler 1'den başlar
+inline constexpr NodeId  kBellPanelId{0xFE};              // Zil paneli (dış1) kimliği: sadece zil paneli bağlantısında
 inline constexpr NodeId  kAllUnitsId{0xFF};               // Herkese: tüm üniteler teslim alır ve aktarır
 inline constexpr uint8_t kProtocolVersion = 2;            // Çerçeve biçimi sürümü
 
 enum class MessageType : uint8_t {                        // Mesaj tipi
   kRingBell  = 1,                                         // Zil çal
   kOpenDoor  = 2,                                         // Kapıyı aç
-  kHeartbeat = 3,                                         // Dış ünite "buradayım" yayını, herkese
+  kHeartbeat = 3,                                         // Kapı ünitesi "buradayım" yayını, herkese
 };
 
 inline constexpr std::size_t kMessageTypeCount = 4;       // Tip değerleriyle indekslenen tabloların boyutu, 0 kullanılmaz

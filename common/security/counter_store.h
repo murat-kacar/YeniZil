@@ -11,7 +11,10 @@ namespace yenizil {
 
 class CounterStore {                                      // Sayaçların flash'ta (NVS) kalıcı kaydı: Preferences
  public:
-  [[nodiscard]] bool begin() { return preferences_.begin(kNamespace, false); }  // NVS ad alanını açar, başarısızsa false
+  [[nodiscard]] bool begin() {                            // NVS ad alanını açar, başarısızsa false. Sayaç ve ağlar ayrı ayrı çağırır, ikinci çağrı açık olanı kullanır
+    if (!started_) started_ = preferences_.begin(kNamespace, false);
+    return started_;
+  }
 
   uint32_t loadTxReserve() { return preferences_.getUInt(kTxReserveKey, 0); }  // Kayıtlı gönderme sayacı rezervi, ilk açılışta 0
 
@@ -50,6 +53,7 @@ class CounterStore {                                      // Sayaçların flash'
   static constexpr const char* kTxReserveKey = "txReserve";  // Gönderme sayacı rezervi anahtarı
 
   Preferences preferences_;                               // NVS erişimi
+  bool        started_ = false;                           // Ad alanı açık mı
 };
 
 }  // namespace yenizil

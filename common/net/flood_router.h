@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <optional>
@@ -11,25 +10,21 @@
 #include "burst_sender.h"
 #include "esp_now_radio.h"
 #include "frame.h"
+#include "frame_receiver.h"
 #include "nodes.h"
 #include "protocol.h"
 
 namespace yenizil {
 
-static_assert(frame::kSize <= ReceivedFrame::kMaxBytes, "Çerçeve radyonun alma tamponuna sığmalı");
-
-class FloodRouter : public Component {                    // Flooding: kendine geleni teslim eder, gerisini değiştirmeden aktarır
+class FloodRouter : public Component, public FrameReceiver {  // Flooding: kendine geleni teslim eder, gerisini değiştirmeden aktarır
  public:
   FloodRouter(EspNowRadio& radio, BurstSender& bursts, SecureChannel& channel, NodeId self)
-      : radio_(radio), bursts_(bursts), channel_(channel), self_(self) {}
+      : radio_(radio), bursts_(bursts), channel_(channel), self_(self) {
+    radio_.attach(*this);
+  }
 
   void begin() override { ready_ = radio_.isReady() && channel_.begin(EspNowRadio::ownMac()); }  // Radyo ya da güvenlik başlamazsa ağ kapalı kalır
-
-  void update(uint64_t) override {                        // Alınan çerçeveleri işler
-    ReceivedFrame received;
-    while (radio_.receive(received))
-      if (ready_) handle(received);
-  }
+  void update(uint64_t) override {}
 
   void send(NodeId destination, MessageType type) {       // Hedefe mesaj gönderir
     if (!ready_ || !isDestination(destination) || destination == self_ || !matchesAddressing(type, destination)) return;
@@ -40,12 +35,10 @@ class FloodRouter : public Component {                    // Flooding: kendine g
   void on(MessageType type, Handler<> handler) { handlers_[toUnderlying(type)] = handler; }  // Mesaj tipine işleyici bağlar
 
  private:
-  void handle(const ReceivedFrame& received) {            // Tek çerçeve: doğrula, sonra teslim et ya da aktar
-    if (received.length != frame::kSize) return;
-    frame::Bytes bytes{};
-    std::copy_n(received.bytes.begin(), frame::kSize, bytes.begin());
+  void receive(const frame::Bytes& bytes) override {      // Tek çerçeve: doğrula, sonra teslim et ya da aktar
+    if (!ready_) return;
     const std::optional<Message> message = channel_.open(bytes);
-    if (!message || !matchesAddressing(message->type, message->destination)) return;
+    if (!message || message->source == kBellPanelId || !matchesAddressing(message->type, message->destination)) return;  // Zil paneli bina ağında değil
     if (message->destination == kAllUnitsId) {            // Herkese: aktar ve teslim et, eylem olmadığı için kalıcı kayıt yok (flash aşınmaz)
       static_cast<void>(bursts_.relay(bytes));            // Yuva doluysa aktarılmaz: diğer üniteler de aktarır (flooding yedekliliği)
       deliver(*message);
@@ -60,10 +53,10 @@ class FloodRouter : public Component {                    // Flooding: kendine g
 
   void deliver(const Message& message) { callIfSet(handlers_[toUnderlying(message.type)]); }  // Mesajı işleyicisine verir
 
-  EspNowRadio&                               radio_;      // Alma
+  EspNowRadio&                               radio_;      // Radyo: kurulum durumu, kartın MAC'i
   BurstSender&                               bursts_;     // Tekrarlı gönderim ve aktarma
   SecureChannel&                             channel_;    // Çerçeve üretimi ve doğrulama
-  NodeId                                     self_;       // Bu ünitenin kimliği: dış ünite 0, iç ünite kFlatId
+  NodeId                                     self_;       // Bu ünitenin kimliği: kapı ünitesi 0, iç ünite kFlatId
   bool                                       ready_ = false;  // Güvenlik başladı, ağ açık
   std::array<Handler<>, kMessageTypeCount>   handlers_{}; // Tip başına işleyici
 };

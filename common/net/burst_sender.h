@@ -5,11 +5,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include "../config/radio_settings.h"
 #include "../kernel/clock.h"
 #include "../kernel/component.h"
 #include "esp_now_radio.h"
+#include "frame.h"
 
 namespace yenizil {
 
@@ -22,7 +22,7 @@ class BurstSender : public Component {                                  // Çer�
   void update(uint64_t nowMs) override {                                // Zamanı gelen kopyaları gönderir
     for (Burst& burst : bursts_) {
       if (burst.remaining == 0 || nowMs < burst.nextSendMs) continue;
-      static_cast<void>(radio_.send(std::span<const uint8_t>(burst.bytes.data(), burst.length)));  // Tek kopyanın kaybı sorun değil: kalan kopyalar gider
+      static_cast<void>(radio_.send(burst.bytes));                     // Tek kopyanın kaybı sorun değil: kalan kopyalar gider
       burst.nextSendMs = nowMs + settings_.intervalMs;
       --burst.remaining;
     }
@@ -35,26 +35,23 @@ class BurstSender : public Component {                                  // Çer�
     return deadlineMs;
   }
 
-  [[nodiscard]] bool send(std::span<const uint8_t> bytes) { return start(bytes, 0); }  // Kendi çerçevesini hemen tekrarlamaya başlar
+  [[nodiscard]] bool send(const frame::Bytes& bytes) { return start(bytes, 0); }      // Kendi çerçevesini hemen tekrarlamaya başlar
 
-  [[nodiscard]] bool relay(std::span<const uint8_t> bytes) {                          // Başkasının çerçevesini rastgele kısa bir beklemeden sonra tekrarlar
+  [[nodiscard]] bool relay(const frame::Bytes& bytes) {                               // Başkasının çerçevesini rastgele kısa bir beklemeden sonra tekrarlar
     return start(bytes, static_cast<uint32_t>(random(settings_.relayJitterMaxMs + 1)));  // Arduino random(): Wi-Fi açıkken donanım RNG
   }
 
  private:
   struct Burst {                                                        // Tekrarlanan bir çerçeve
-    std::array<uint8_t, ReceivedFrame::kMaxBytes> bytes{};              // Çerçeve
-    uint8_t  length     = 0;                                            // Çerçeve uzunluğu
-    uint64_t nextSendMs = 0;                                            // Sıradaki kopyanın zamanı
-    uint8_t  remaining  = 0;                                            // Gönderilecek kopya sayısı, 0: yuva boş
+    frame::Bytes bytes{};                                               // Çerçeve
+    uint64_t     nextSendMs = 0;                                        // Sıradaki kopyanın zamanı
+    uint8_t      remaining  = 0;                                        // Gönderilecek kopya sayısı, 0: yuva boş
   };
 
-  bool start(std::span<const uint8_t> bytes, uint32_t delayMs) {       // Boş bir yuvada tekrarı başlatır
-    if (bytes.size() > ReceivedFrame::kMaxBytes) return false;
+  bool start(const frame::Bytes& bytes, uint32_t delayMs) {            // Boş bir yuvada tekrarı başlatır
     const auto slot = std::find_if(bursts_.begin(), bursts_.end(), [](const Burst& burst) { return burst.remaining == 0; });
     if (slot == bursts_.end()) return false;                            // Tüm yuvalar dolu
-    std::ranges::copy(bytes, slot->bytes.begin());
-    slot->length     = static_cast<uint8_t>(bytes.size());
+    slot->bytes      = bytes;
     slot->nextSendMs = monotonicMs() + delayMs;
     slot->remaining  = settings_.copies;
     return true;

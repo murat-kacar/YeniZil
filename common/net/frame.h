@@ -12,7 +12,7 @@
 namespace yenizil::frame {                                // Çerçeve biçimi v2: alanlar bayt bayt yazılır, struct kopyalanmaz
 
 inline constexpr std::size_t kMacSize       = std::tuple_size_v<MacAddress>;  // MAC adresi (bayt)
-inline constexpr std::size_t kApartmentSize = sizeof(ApartmentId);            // Apartman kimliği (bayt)
+inline constexpr std::size_t kNetworkSize   = sizeof(NetworkId);              // Ağ kimliği (bayt)
 inline constexpr std::size_t kCounterSize   = sizeof(FrameCounter);           // Sayaç (bayt)
 inline constexpr std::size_t kSize          = 26;         // Çerçeve boyutu (bayt)
 inline constexpr std::size_t kHeaderSize    = 17;         // İmzalı, şifresiz başlık (bayt)
@@ -21,7 +21,7 @@ inline constexpr std::size_t kTagSize       = 8;          // AES-CCM doğrulama 
 inline constexpr std::size_t kNonceSize     = 13;         // AES-CCM nonce (bayt)
 
 inline constexpr std::size_t kVersionAt     = 0;          // sürüm (1)
-inline constexpr std::size_t kApartmentAt   = 1;          // apartman kimliği (4)
+inline constexpr std::size_t kNetworkAt     = 1;          // ağ kimliği (4)
 inline constexpr std::size_t kSourceMacAt   = 5;          // gönderen kartın MAC adresi (6)
 inline constexpr std::size_t kSourceAt      = 11;         // kaynak (1)
 inline constexpr std::size_t kDestinationAt = 12;         // hedef (1)
@@ -33,7 +33,7 @@ inline constexpr std::size_t kNonceMacAt     = 0;         // nonce: gönderen MA
 inline constexpr std::size_t kNonceCounterAt = 6;         // nonce: sayaç (4)
 inline constexpr std::size_t kNonceVersionAt = 10;        // nonce: sürüm (1), kalan 2 bayt sıfır
 
-static_assert(kSourceMacAt == kApartmentAt + kApartmentSize && kSourceAt == kSourceMacAt + kMacSize && kPayloadAt == kCounterAt + kCounterSize,
+static_assert(kSourceMacAt == kNetworkAt + kNetworkSize && kSourceAt == kSourceMacAt + kMacSize && kPayloadAt == kCounterAt + kCounterSize,
               "Alan yerleşimi alan boyutlarıyla uyuşmuyor");
 static_assert(kPayloadAt == kHeaderSize && kTagAt == kPayloadAt + kPayloadSize && kTagAt + kTagSize == kSize, "Alan yerleşimi çerçeve boyutuyla uyuşmuyor");
 static_assert(kNonceCounterAt == kNonceMacAt + kMacSize && kNonceVersionAt == kNonceCounterAt + kCounterSize && kNonceVersionAt < kNonceSize,
@@ -44,7 +44,7 @@ using Nonce = std::array<uint8_t, kNonceSize>;            // AES-CCM nonce
 
 struct Header {                                           // Başlık, tamamı imzalı
   uint8_t      version;                                   // Çerçeve biçimi sürümü
-  ApartmentId  apartmentId;                               // Apartman kimliği
+  NetworkId    networkId;                                 // Ağ kimliği
   MacAddress   sourceMac;                                 // Gönderen kartın MAC adresi: nonce'u kimlikten bağımsız tekil yapar
   NodeId       source;                                    // Gönderen ünite
   NodeId       destination;                               // Hedef ünite
@@ -55,7 +55,7 @@ constexpr Bytes encodeHeader(const Header& header) {      // Başlığı yazar, 
   Bytes bytes{};
   const std::span<uint8_t, kSize> view(bytes);
   bytes[kVersionAt] = header.version;
-  writeLe(view.subspan<kApartmentAt, kApartmentSize>(), toUnderlying(header.apartmentId));
+  writeLe(view.subspan<kNetworkAt, kNetworkSize>(), toUnderlying(header.networkId));
   std::ranges::copy(header.sourceMac, view.subspan<kSourceMacAt, kMacSize>().begin());
   bytes[kSourceAt]      = toUnderlying(header.source);
   bytes[kDestinationAt] = toUnderlying(header.destination);
@@ -67,7 +67,7 @@ constexpr Header decodeHeader(const Bytes& bytes) {       // Çerçeveden başl�
   const std::span<const uint8_t, kSize> view(bytes);
   Header header{
       .version     = bytes[kVersionAt],
-      .apartmentId = ApartmentId{readLe<uint32_t>(view.subspan<kApartmentAt, kApartmentSize>())},
+      .networkId   = NetworkId{readLe<uint32_t>(view.subspan<kNetworkAt, kNetworkSize>())},
       .sourceMac   = {},
       .source      = NodeId{bytes[kSourceAt]},
       .destination = NodeId{bytes[kDestinationAt]},
