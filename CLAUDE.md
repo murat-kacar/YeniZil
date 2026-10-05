@@ -1,6 +1,6 @@
 # YeniZil — rules for working on this repo
 
-Wireless doorbell + door opener for a 4-flat building. ESP32-C3 Super Mini, Arduino core 3.3.12, ESP-NOW flooding, AES-128-CCM.
+Wireless doorbell + door opener for a 4-flat building. Six ESP32-C3 Super Mini boards: bell panel (dış1, outside, buttons only), door unit (dış2, inside, door relay, hub of the building network), 4 indoor units. Arduino core 3.3.12, ESP-NOW, AES-128-CCM. Two networks with separate IDs and keys: the bell panel link (dış1 → dış2, direct) and the building network (dış2 + indoor units, flooding). The bell panel never holds the building key.
 Design decisions and their rationale live in `docs/ARCHITECTURE.md` (the numbered "Karar" list is the ADR log). This file holds the rules.
 
 ## 1. Working agreement
@@ -9,7 +9,7 @@ Design decisions and their rationale live in `docs/ARCHITECTURE.md` (the numbere
 - Be direct: if the user (or an earlier decision) is wrong, say so with the correct term and the reason.
 - Claude writes code, compiles it, and uploads it **only when the user says "yükle"**. The user tests the boards physically.
 - No test sketches, bench tools, helper scripts or debug/serial logging unless the user explicitly asks. A requested test lives on its own branch and is removed when the user says so.
-- Commit and push only when asked. Everything is committed, including `indoor_config.h` / `outdoor_config.h` with the network key. The repo is public on purpose. Do not add `.example.h` templates or `.gitignore` entries for them, and do not raise the key-exposure topic again.
+- Commit and push only when asked. Everything is committed, including `bell_panel_config.h` / `door_unit_config.h` / `indoor_config.h` with the network keys. The repo is public on purpose. Do not add `.example.h` templates or `.gitignore` entries for them, and do not raise the key-exposure topic again.
 - Before destructive git operations (restore, reset, branch delete), check `git status` and name every file that will lose changes.
 
 ## 2. Priority when rules conflict
@@ -42,14 +42,14 @@ For every step-2 or step-4 use, add a row with the reason to `docs/ARCHITECTURE.
 - Encapsulation: state is private, the public API is minimal, helpers are private.
 - Abstraction: classes speak the domain language (`bell.ring()`, `intercom.requestDoorOpen()`).
 - Inheritance only for "is-a" (`Button` is a `PollingComponent`). Use composition for "has-a" (`Bell` has a `PulseOutput`).
-- Virtual functions only where heterogeneous objects must share one runtime list (`Component`) or a library requires it (`ESP_NOW_Peer`).
+- Virtual functions only where heterogeneous objects must share one runtime list (`Component`, `FrameReceiver`) or a library requires it (`ESP_NOW_Peer`).
 
 **SOLID**
-- **S**: one reason to change per class. `EspNowRadio` = radio I/O, `BurstSender` = repetition, `SecureChannel` = crypto + replay, `FloodRouter` = routing.
+- **S**: one reason to change per class. `EspNowRadio` = radio I/O and frame dispatch, `BurstSender` = repetition, `TxCounter` = send counter, `SecureChannel` = crypto + replay for one network, `FloodRouter` = building-network routing, `PanelLink` = bell panel link.
 - **O**: extend by adding types or config, not by editing working classes. For example, a new broadcast type is added in `protocol.h` (`isBroadcast`), and the router does not change.
 - **L**: every `Component` honours the contract: `begin()` prepares hardware, `update()` never blocks, `nextDeadlineMs()` is accurate.
 - **I**: small interfaces. `Component` has three methods.
-- **D**: dependencies come in through constructors as references. No class reaches a global. Only the composition roots (`indoor.h`, `outdoor.h`) create objects.
+- **D**: dependencies come in through constructors as references. No class reaches a global. Only the composition roots (`bell_panel.h`, `door_unit.h`, `indoor.h`) create objects.
 
 **DRY, KISS, YAGNI**
 - One source of truth per fact or rule (pin levels → `digital_pin.h`, handler invocation → `callIfSet`, frame layout → `frame.h`). The second copy of code becomes a shared helper. Known deliberate duplicate: network ID and key in both unit config files.
@@ -68,34 +68,36 @@ For every step-2 or step-4 use, add a row with the reason to `docs/ARCHITECTURE.
 
 | Pattern | Where |
 |---|---|
-| Facade | `Intercom` builds and hides the network stack |
+| Facade | `Intercom` builds and hides the building network |
 | Template Method | `PollingComponent` (timing) → `poll()` in subclasses |
-| Observer (function-pointer callbacks) | `onPress`, `onRing`, `onHeartbeat`, `onTick` |
+| Observer (function-pointer callbacks) | `onPress`, `onRing`, `onRingRequest`, `onHeartbeat`, `onTick` |
+| Observer (interface) | `EspNowRadio` → `FrameReceiver` (`FloodRouter`, `PanelLink`) |
 | Adapter | `BroadcastPeer` over Arduino `ESP_NOW_Peer` |
 | State machine (explicit `enum class` states) | `PressDetector` |
 | Reactor / cooperative scheduler | `EventLoop` |
 | Producer–Consumer | ESP-NOW receive callback → static FreeRTOS queue → loop |
 | Pipes and Filters (fixed order) | `SecureChannel::open` |
-| Composition Root + Dependency Injection | `indoor.h`, `outdoor.h` |
-| Intrusive registry | `Component` self-registration (no heap) |
+| Composition Root + Dependency Injection | `bell_panel.h`, `door_unit.h`, `indoor.h` |
+| Intrusive registry | `Component` self-registration, `FrameReceiver` list in the radio (no heap) |
 | Command | message types |
 
 Not used on purpose: Singleton (use DI), runtime middleware chains, CRTP, policy-based design, template metaprogramming. Decorator is allowed if a cross-cutting need appears (e.g. logging a radio).
 
 ## 7. Architecture and file layout
 
-Layers, dependencies only point down: Sketch (`*.ino`) → Unit (`indoor.h`/`outdoor.h`) → App → Services → Platform → Core → Kernel. `common/config` gives values and settings types to every layer and depends on nothing. Core files (`press_detector`, `replay_window`, `frame`, `protocol`, `byte_order`, `enum_value`, `static_checks`) are pure C++ and must never include Arduino/ESP-IDF. Other layers use Arduino/ESP-IDF directly (ports and adapters: `EspNowRadio`, `BroadcastPeer`, `CounterStore`, `CcmCipher`, `digital_pin`, `clock`, `EventLoop`).
+Layers, dependencies only point down: Sketch (`*.ino`) → Unit (`bell_panel.h`/`door_unit.h`/`indoor.h`) → App → Services → Platform → Core → Kernel. `common/config` gives values and settings types to every layer and depends on nothing. Core files (`press_detector`, `replay_window`, `frame`, `protocol`, `byte_order`, `enum_value`, `static_checks`) are pure C++ and must never include Arduino/ESP-IDF. Other layers use Arduino/ESP-IDF directly (ports and adapters: `EspNowRadio`, `BroadcastPeer`, `CounterStore`, `CcmCipher`, `digital_pin`, `clock`, `EventLoop`).
 
 ```
-indoor/  indoor.ino · indoor.h · indoor_config.h · hardware.h
-outdoor/ outdoor.ino · outdoor.h · outdoor_config.h · hardware.h
+bell_panel/ bell_panel.ino · bell_panel.h · bell_panel_config.h · hardware.h
+door_unit/  door_unit.ino · door_unit.h · door_unit_config.h · hardware.h
+indoor/     indoor.ino · indoor.h · indoor_config.h · hardware.h
 common/  app/ config/ io/ kernel/ net/ power/ security/
 docs/ARCHITECTURE.md
 ```
 
 - `*.ino`: only "event → action" bindings plus `using namespace yenizil;`. Never edited to change a setting or behaviour. Different behaviour is solved with OOP.
-- `indoor.h` / `outdoor.h`: composition root plus unit settings (pulse lengths, press rules, `NetworkSettings`) and their `static_assert`s.
-- `*_config.h`: only values changed before flashing: network ID, network key, and for indoor units `kFlatId`. Nothing else.
+- `bell_panel.h` / `door_unit.h` / `indoor.h`: composition root plus unit settings (pulse lengths, press rules, `NetworkCredentials`) and their `static_assert`s.
+- `*_config.h`: only values changed before flashing: network IDs and keys (building network, bell panel link), and for indoor units `kFlatId`. Nothing else.
 - `hardware.h`: only externally wired parts (pins, active levels, wiring notes) and pin checks. On-board parts (e.g. GPIO8 LED) do not belong here.
 - `common/config/*_config.h`: product and building values. `*_settings.h`: settings structs.
 - All shared code is header-only (`inline`). Arduino IDE does not compile `.cpp` files outside the sketch folder, and its `.ino` preprocessor breaks some modern C++ (e.g. `consteval`), so such code stays in headers.
@@ -129,7 +131,8 @@ docs/ARCHITECTURE.md
 ## 10. Security rules
 
 - Kerckhoffs: only the key is secret. Use standard AES-128-CCM (mbedTLS) with an 8-byte tag.
-- Nonce = sender MAC + persistent counter, never reused (NIST SP 800-38C, 802.15.4). The TX counter reserve must be saved before use. Stop sending rather than reuse a counter.
+- Least privilege: the bell panel (outside) holds only the bell panel link key. The door unit accepts only ring requests from that link and re-sends them on the building network. The two networks must have different IDs and keys (`isSeparate`).
+- Nonce = sender MAC + persistent counter, never reused (NIST SP 800-38C, 802.15.4). One `TxCounter` per board, shared by all its networks. The TX counter reserve must be saved before use. Stop sending rather than reuse a counter.
 - Processing order is fixed: cheap checks → read-only replay check → authenticate/decrypt → advance replay window → action. Allocate peer slots only after authentication.
 - Persist the RX counter before acting. If persisting fails, do not act.
 - Deny by default: drop unknown versions, apartments, types, destinations and malformed addressing.
@@ -145,7 +148,7 @@ arduino-cli board list
 arduino-cli upload  -b esp32:esp32:esp32c3 -p <COMx> --input-dir "$env:LOCALAPPDATA\arduino\claude-build\<sketch>" C:\Users\Victus\Desktop\YeniZil\<sketch>
 ```
 
-- After every code change, compile both sketches (`indoor`, `outdoor`). A cold build takes ~75 s, a cached one ~16 s. If a build passes ~2 min, stop it and investigate.
+- After every code change, compile all three sketches (`bell_panel`, `door_unit`, `indoor`). A cold build takes ~75 s, a cached one ~16 s. If a build passes ~2 min, stop it and investigate.
 - Do not change board options or add `--warnings all` on the normal build path: that invalidates the cache. Use a separate path such as `claude-build\<sketch>-warn` for warning checks.
 - Upload only on "yükle". Ask which unit is on which port. For an indoor unit, set `kFlatId` first.
 - `arduino-cli monitor` only if the user asks.
@@ -153,15 +156,15 @@ arduino-cli upload  -b esp32:esp32:esp32c3 -p <COMx> --input-dir "$env:LOCALAPPD
 ## 12. Git and process
 
 - Small, single-purpose commits. Conventional Commits prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`. End messages with the `Co-Authored-By` line.
-- `kProtocolVersion` follows SemVer thinking: bump it on any wire-format change, and remind the user that all five boards must be reflashed.
+- `kProtocolVersion` follows SemVer thinking: bump it on any wire-format change, and remind the user that all six boards must be reflashed.
 - Boy Scout rule: leave touched code cleaner. Keep `docs/ARCHITECTURE.md` in sync with every design change, and add a "Karar" entry for new decisions.
 - Default branch `master`, remote `origin` (github.com/murat-kacar/YeniZil).
 
 ## 13. Hardware facts
 
 - Safe GPIOs on the Super Mini: 0, 1, 3, 4, 5, 6, 7, 10. Avoid 2/8/9 (strapping), 18/19 (USB), 20/21 (UART0).
-- Outdoor: buttons GPIO3–6 (flats 1–4, to GND), door relay trigger GPIO10 (10k pull-down). Indoor: open-door button GPIO10, bell GPIO0 (≤ 2.5 mA, direct), link LED GPIO1.
-- Every LED the user wires gets a **240 Ω series resistor**. A parallel pull-down does not limit current. A resistor-less LED destroyed an outdoor board.
+- Bell panel: buttons GPIO3–6 (flats 1–4, to GND). Door unit: door relay trigger GPIO10 (10k pull-down). Indoor: open-door button GPIO10, bell GPIO0 (≤ 2.5 mA, direct), link LED GPIO1.
+- Every LED the user wires gets a **240 Ω series resistor**. A parallel pull-down does not limit current. A resistor-less LED destroyed the old outdoor board.
 - A GPIO pin sources ~20 mA safely. Bigger or inductive loads need a transistor/MOSFET plus a flyback diode.
 - 5 V / 300 mA adapters. The radio listens continuously (~90–100 mA average). Above 14 dBm TX power, use at least 500 mA adapters.
 
