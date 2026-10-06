@@ -1,6 +1,6 @@
 # YeniZil — rules for working on this repo
 
-Wireless doorbell + door opener for a 4-flat building. Six ESP32-C3 Super Mini boards: bell panel (dış1, outside, buttons only), door unit (dış2, inside, door relay, hub of the building network), 4 indoor units. Arduino core 3.3.12, ESP-NOW, AES-128-CCM. Two networks with separate IDs and keys: the bell panel link (dış1 → dış2, direct) and the building network (dış2 + indoor units, flooding). The bell panel never holds the building key.
+Wireless doorbell + door opener for a 7-flat building. Nine ESP32-C3 Super Mini boards: bell panel (dış1, outside, buttons + panel light), door unit (dış2, inside, door relay + per-flat status LEDs + pairing button, hub of the building network), 7 indoor units. Arduino core 3.3.12, ESP-NOW, AES-128-CCM. Two networks with separate IDs and keys: the bell panel link (dış1 → dış2, direct) and the building network (dış2 + indoor units, flooding). The bell panel never holds the building key.
 Design decisions and their rationale live in `docs/ARCHITECTURE.md` (the numbered "Karar" list is the ADR log). This file holds the rules.
 
 ## 1. Working agreement
@@ -156,14 +156,14 @@ arduino-cli upload  -b esp32:esp32:esp32c3 -p <COMx> --input-dir "$env:LOCALAPPD
 ## 12. Git and process
 
 - Small, single-purpose commits. Conventional Commits prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`. End messages with the `Co-Authored-By` line.
-- `kProtocolVersion` follows SemVer thinking: bump it on any wire-format change, and remind the user that all six boards must be reflashed.
+- `kProtocolVersion` follows SemVer thinking: bump it on any wire-format change, and remind the user that all nine boards must be reflashed.
 - Boy Scout rule: leave touched code cleaner. Keep `docs/ARCHITECTURE.md` in sync with every design change, and add a "Karar" entry for new decisions.
 - Default branch `master`, remote `origin` (github.com/murat-kacar/YeniZil).
 
 ## 13. Hardware facts
 
-- Safe GPIOs on the Super Mini: 0, 1, 3, 4, 5, 6, 7, 10. Avoid 2/8/9 (strapping), 18/19 (USB), 20/21 (UART0).
-- Bell panel: buttons GPIO3–6 (flats 1–4, to GND). Door unit: door relay trigger GPIO10 (10k pull-down). Indoor: open-door button GPIO10, bell GPIO0 (≤ 2.5 mA, direct), link LED GPIO1.
+- Safe GPIOs on the Super Mini: 0, 1, 3, 4, 5, 6, 7, 10, 20. Avoid 2/8/9 (strapping: a button or a pin-to-GND LED can pull them low at reset), 18/19 (USB), 21 (UART0 TX, driven by the ROM at boot). GPIO20 (UART0 RX) is an input at boot and free because the code has no serial port.
+- Bell panel: flat buttons 1→GPIO1, 2→GPIO0, 3–7→GPIO3–7 (to GND), panel light LED GPIO10. Door unit: flat status LEDs 1→GPIO1, 2→GPIO0, 3–7→GPIO3–7, door relay trigger GPIO10 (10k pull-down), pairing button GPIO20 (to GND). GPIO20 is spare on the bell panel. Indoor: open-door button GPIO10, bell GPIO0 (≤ 2.5 mA, direct), link LED GPIO1.
 - Every LED the user wires gets a **240 Ω series resistor**. A parallel pull-down does not limit current. A resistor-less LED destroyed the old outdoor board.
 - A GPIO pin sources ~20 mA safely. Bigger or inductive loads need a transistor/MOSFET plus a flyback diode.
 - 5 V / 300 mA adapters. The radio listens continuously (~90–100 mA average). Above 14 dBm TX power, use at least 500 mA adapters.

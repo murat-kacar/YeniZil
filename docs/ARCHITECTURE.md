@@ -8,11 +8,11 @@ Sürüm 3 · 05.10.2026 · Durum: **kod tamam, donanım kurulumu bekliyor**
 
 ### 1.1 Gereksinimler
 
-- 4 katlı bina, her katta 1 daire.
-- **Zil paneli (dış1, bina dışında):** 4 zil butonu. Sadece kapı ünitesiyle konuşur.
-- **Kapı ünitesi (dış2, bina içinde):** Kapı rölesi tetiği (3.3V). Bina ağının merkezi: zil isteklerini iç ünitelere yayar, kapı açma isteklerini alır, heartbeat yayınlar.
-- **İç ünite (×4):** "kapıyı aç" butonu + zil tetiği (3.3V) + bağlantı LED'i.
-- Toplam 6 kart. Her ünite kendi 5V adaptöründen beslenir. Pil yok.
+- 7 daireli bina.
+- **Zil paneli (dış1, bina dışında):** 7 zil butonu + panel aydınlatma LED'i. Sadece kapı ünitesiyle konuşur.
+- **Kapı ünitesi (dış2, bina içinde):** Kapı rölesi tetiği (3.3V) + her daire için bir durum LED'i (7 adet) + eşleştirme butonu. Bina ağının merkezi: zil isteklerini iç ünitelere yayar, kapı açma isteklerini alır, heartbeat yayınlar.
+- **İç ünite (×7):** "kapıyı aç" butonu + zil tetiği (3.3V) + bağlantı LED'i.
+- Toplam 9 kart. Her ünite kendi 5V adaptöründen beslenir. Pil yok.
 - Tamamen kablosuz, internet yok. ESP-NOW ile iki ayrı ağ: zil paneli bağlantısı (dış1 → dış2, doğrudan) ve bina ağı (dış2 + iç üniteler, flooding).
 - Kart: ESP32-C3 Super Mini. Derleme ortamı: Arduino IDE, esp32 core 3.3.12 (ESP-IDF 5.5.5).
 
@@ -21,6 +21,7 @@ Sürüm 3 · 05.10.2026 · Durum: **kod tamam, donanım kurulumu bekliyor**
 | Zil panelinde N. butona basılıp bırakıldı | Kapı ünitesi isteği alır, N. dairenin zili 1,5 sn çalar |
 | N. dairede "kapıyı aç" butonuna basılıp bırakıldı | Kapı ünitesindeki röle 1,5 sn tetiklenir |
 | Kapı ünitesinden heartbeat geldi (saniyede bir) | İç ünitenin bağlantı LED'i 10 ms yanar. Bağlantı yoksa LED hiç yanmaz |
+| Kapı ünitesinde eşleştirme butonu 10–15 sn basılı tutulup bırakıldı | Eşleştirme modu 180 sn açılır (Karar 21) |
 
 ### 1.2 Kodun kapsamı
 
@@ -42,9 +43,11 @@ Her şey **Arduino-first**: önce Arduino-ESP32 core'un API ve kütüphaneleri k
 
 İhtiyaç doğduğunda eklenecek:
 
-- Bağlantı LED'i dışındaki geri bildirim LED'leri
 - "Kapı sadece zil çaldıktan sonra açılabilsin" kuralı
-- Zaman senkronizasyonu (FTSP)
+- Zaman senkronizasyonu (FTSP) ve aydınlatma LED'inin saate göre yanması: saat kaynağı yok, LED sürekli yanık
+- Aydınlatma için ışık sensörü (LM393'lü dijital LDR modülü, dış1 GPIO20): "hava kararınca yan"
+- Ağ anahtarını yenileme (cihaz çıkarılınca): kapı cihaz anahtarıyla korunduğu için ilk sürümde gerekmiyor
+- Long Range 500 kbps: sahada menzil yeterliyse kanal yükü yarıya iner
 - OTA güncelleme ve flash şifreleme
 - Radyo uykusu (duty cycle) ve otomatik hafif uyku: pil gündeme gelirse, ESP-IDF'e geçişle (bkz. Karar 1)
 
@@ -73,7 +76,7 @@ Tekrar koruma durumu yalnızca RAM'de tutulursa şu saldırı mümkün olur:
 2. Kapı ünitesinin fişini çekip takar. Tekrar koruma durumu sıfırlanır.
 3. Kaydettiği mesajı tekrar gönderir, kapı açılır.
 
-**Karar:** Kendine gelen ve eyleme dönüşecek her mesajın sayacı, gönderen kartın MAC'i anahtar olarak kullanılarak **eylemden önce** NVS'ye yazılıyor. Yazılamazsa eylem yapılmıyor. Açılıştan sonra bir karttan ilk doğrulanmış çerçeve geldiğinde o kartın tekrar penceresi "kayıtlı sayaca kadar hepsi görüldü" durumuyla başlıyor. NVS aşınmayı dengelediği için flash ömrü sorun değil: günde 50 olay × 6 ünite, 100 bin silme döngüsünün çok altında kalıyor.
+**Karar:** Kendine gelen ve eyleme dönüşecek her mesajın sayacı, gönderen kartın MAC'i anahtar olarak kullanılarak **eylemden önce** NVS'ye yazılıyor. Yazılamazsa eylem yapılmıyor. Açılıştan sonra bir karttan ilk doğrulanmış çerçeve geldiğinde o kartın tekrar penceresi "kayıtlı sayaca kadar hepsi görüldü" durumuyla başlıyor. NVS aşınmayı dengelediği için flash ömrü sorun değil: günde 50 olay × 9 ünite, 100 bin silme döngüsünün çok altında kalıyor.
 
 ### Karar 4 — Kimlik yüklemede verilir, nonce MAC'ten üretilir
 
@@ -129,7 +132,7 @@ ESP-NOW yayınları onaysız: gönderen çerçevenin ulaşıp ulaşmadığını 
 - `door_unit/door_unit_config.h`: bina ağının kimliği ve şifresi, zil paneli bağlantısının kimliği ve şifresi.
 - `indoor/indoor_config.h`: bina ağının kimliği ve şifresi, daire numarası.
 
-Bina ağının kimliği ve şifresi kapı ünitesinde ve dört iç ünitede aynı olmalı. Bağlantının kimliği ve şifresi zil panelinde ve kapı ünitesinde aynı olmalı. Dosyalar git'te. Kimlik ya da şifre sıfır bırakılırsa, iki ağın kimliği ya da şifresi aynıysa, daire numarası aralık dışındaysa program derlenmiyor.
+Bina ağının kimliği ve şifresi kapı ünitesinde ve yedi iç ünitede aynı olmalı. Bağlantının kimliği ve şifresi zil panelinde ve kapı ünitesinde aynı olmalı. Dosyalar git'te. Kimlik ya da şifre sıfır bırakılırsa, iki ağın kimliği ya da şifresi aynıysa, daire numarası aralık dışındaysa program derlenmiyor.
 
 Kapı ünitesinin ağdaki numarası (0) ve ünitelerin diğer ayarları (darbe süreleri, basış kuralları) `bell_panel.h` / `door_unit.h` / `indoor.h` içinde. Daire sayısı, kanal ve TX gücü gibi bina geneli ayarlar `common/config` altında.
 
@@ -163,7 +166,7 @@ Her mesaj gönderenden ve her aktarıcıdan 3'er kopya geliyor. Tekrar penceresi
 
 Flooding ağında sürekli bir bağlantı yok, mesaj sadece olay olunca gidiyor. İç ünitenin "bağlıyım" diyebilmesi için düzenli bir sinyal gerekiyor.
 
-**Karar:** Kapı ünitesi her 1 sn'de bir, açılışta da hemen, herkese (`kAllUnitsId`) doğrulanmış bir heartbeat yayınlıyor. Her ünite bunu teslim alıp aktarıyor, böylece üst katlara da ulaşıyor. İç ünite her heartbeat'te bağlantı LED'ini 10 ms yakıyor, LED'in ne zaman yanacağına kapı ünitesi karar veriyor. Bağlıyken LED saniyede bir kısa yanıp söner. Bağlantı yoksa hiç yanmaz. İç ünitede zaman aşımı ya da "bağlı mıyım" durumu yok, kopukluk ilk kaçan yanıp sönmede görülüyor. Heartbeat bir eylem değil. Bu yüzden sayacı flash'a yazılmıyor, flash aşınmıyor. Maliyeti her ünitenin saniyede bir 3 kopya göndermesi: saniyede ~15 kısa çerçeve, kanalın ~%3'ü. LED kapı ünitesine olan bağlantıyı gösteriyor. Zil paneli ile kapı ünitesi arasındaki bağlantının göstergesi yok.
+**Karar:** Kapı ünitesi her 1 sn'de bir, açılışta da hemen, herkese (`kAllUnitsId`) doğrulanmış bir heartbeat yayınlıyor. Her ünite bunu teslim alıp aktarıyor, böylece üst katlara da ulaşıyor. İç ünite her heartbeat'te bağlantı LED'ini 10 ms yakıyor, LED'in ne zaman yanacağına kapı ünitesi karar veriyor. Bağlıyken LED saniyede bir kısa yanıp söner. Bağlantı yoksa hiç yanmaz. İç ünitede zaman aşımı ya da "bağlı mıyım" durumu yok, kopukluk ilk kaçan yanıp sönmede görülüyor. Heartbeat bir eylem değil. Bu yüzden sayacı flash'a yazılmıyor, flash aşınmıyor. Maliyeti her ünitenin saniyede bir 3 kopya göndermesi: 8 ünitede saniyede ~24 kısa çerçeve, kanalın ~%5'i. LED kapı ünitesine olan bağlantıyı gösteriyor. Zil paneli ile kapı ünitesi arasındaki bağlantının göstergesi yok.
 
 ### Karar 19 — İki ağ: zil paneli bağlantısı ve bina ağı, kapı ünitesi ağ geçidi
 
@@ -185,6 +188,94 @@ Sonuçları:
 Kapı ünitesinde tek radyonun üstünde iki ağ çalışıyor. Alma kuyruğunu tek bir ağ boşaltsaydı öteki ağın çerçeveleri kaybolurdu.
 
 **Karar:** `EspNowRadio` kuyruktaki her çerçeveyi kendisine bağlı bütün ağlara (`FrameReceiver`) veriyor (Observer). Her ağ kendi constructor'ında radyoya bağlanıyor. Liste radyonun içinde, ağların kendi bağlantı alanlarıyla kuruluyor (intrusive list, heap yok). Her ağ öteki ağın çerçevesini ilk ucuz denetimde, ağ kimliğine bakarak atıyor. Radyo, uzunluğu protokol çerçevesinden (26 bayt) farklı veriyi kuyruğa hiç koymuyor. Radyo, tekrarlı gönderim ve sayaçlar karttaki ağlar arasında ortak, hepsi `RadioStack` içinde kuruluyor.
+
+### Karar 21 — Eşleştirme modu: kutudaki BOOT butonu, 30 sn pencere
+
+Eşleştirme her zaman açık olsaydı menzildeki herkes her an katılmayı deneyebilirdi.
+
+**Karar:** Eşleştirme modu, kartın kendi BOOT butonuna (GPIO9) 10–15 sn basılı tutulup bırakılınca açılıyor. Bu, dış2'de ve dış1'de aynı; iç ünitede ise kapı butonu kullanılıyor. Kartlar vidalı kutunun içinde olduğu için **eşleştirme yetkisi kutuyu açan kişide.** 10 sn'nin altı kazara basış, 15 sn'nin üstü sıkışmış buton sayılıyor (Karar 7).
+
+Mod 30 sn işlem yapılmazsa kendiliğinden kapanıyor. Süre her basışta baştan başlıyor, buton basılıyken dolmuyor. Eşleştirme apartman girişinde, iç ünite dış2'nin yanındayken yapıldığı için 30 sn yetiyor.
+
+BOOT butonu kart yeniden başlarken basılı tutulursa kart yükleme modunda açılır. Butona sadece kutuyu açan kişi erişebildiği için bu kabul edilen bir risk. Böylece GPIO20 dış1'de ve dış2'de boşalıyor. Ayrıntı: 8.3.
+
+> **Kod durumu:** Kodda eşleştirme butonu henüz GPIO20'de, pencere 180 sn ve tek seferlik. v3 koduyla düzeltilecek.
+
+### Karar 22 — Bina kimliği dış2'de doğar, config dosyası yok
+
+Bütün iç ünitelerin ve dış1'lerin yazılımı aynı olacak. Şifre yazılımda olsaydı her binada ve raftaki her cihazda aynı olurdu, binalar birbirinden ayrılamazdı.
+
+**Karar:** Dış2 ilk açılışta donanım rastgele sayı üreteciyle bina ağının kimliğini ve şifresini, zil paneli bağlantısının kimliğini üretiyor, NVS'de saklıyor ve radyo kanalını seçiyor (Karar 28). İki binanın şifresinin çakışma olasılığı 2⁻¹²⁸. İç ünite ve dış1 bu bilgileri eşleşmede alıyor.
+
+Ünite klasörlerindeki config dosyaları kalkıyor. Ürün ayarları (`common/config/`) kalıyor.
+
+Dış2 bozulur ya da flash'ı silinirse bina yeni bir kimlikle başlar. Bütün iç üniteler ve dış1 yeniden eşleşir, bu kabul edildi. Ayrıntı: 8.2.
+
+### Karar 23 — Şifre teslimi: X25519 + HKDF, yan yana eşleşme
+
+**Karar:**
+- Eşleşen iki kart geçici X25519 anahtar çifti üretiyor ve açık anahtarları değiştiriyor (ECDH).
+- Ortak sırdan HKDF-SHA256 ile iki anahtar türetiliyor:
+  - **Oturum anahtarı:** eşleşme mesajlarını şifreliyor.
+  - **Cihaz anahtarı:** kalıcı. Havada hiç taşınmıyor, iki taraf da kendisi türetiyor.
+- Dış2 ağ şifresini oturum anahtarıyla şifreleyip gönderiyor. Havayı dinleyen biri bu sırrı hesaplayamaz.
+
+Araya girmeye (MITM) karşı önlemler:
+- İki tarafta fiziksel buton ve 30 sn pencere.
+- **Tek aday:** Dış2 pencere içinde ikinci bir aday görürse, iç ünite ikinci bir cevap görürse eşleşme iptal ediliyor. Havadan yayın yapıldığı için araya giren saldırgan gerçek cihazın sinyalini bastıramaz.
+- **Yakınlık:** Sinyali zayıf aday kabul edilmiyor, eşleşme yan yana yapılıyor.
+
+X25519, HKDF ve AES-CCM core'un içindeki mbedTLS'te hazır (`CONFIG_MBEDTLS_ECDH_C`, `CONFIG_MBEDTLS_ECP_DP_CURVE25519_ENABLED`, `CONFIG_MBEDTLS_HKDF_C`). Ayrıntı: 8.5.
+
+### Karar 24 — Cihaz anahtarı ve iki katmanlı imza
+
+Ortak ağ şifresiyle tek bir cihazın yetkisi iptal edilemez: sökülen, bozulan ya da çalınan iç ünite şifreyi taşımaya devam eder.
+
+**Karar:** Zigbee'nin iki katmanlı modeli uygulanıyor.
+- **Ağ anahtarı (dış katman, NWK gibi):** Her çerçevede var. Aradaki üniteler bununla doğrulayıp aktarıyor.
+- **Cihaz anahtarı (iç katman, APS gibi):** Kapı açma, "buradayım" ve "çaldım" mesajlarında ikinci bir 8 baytlık etiket. Uçtan uca: sadece dış2 ile o cihaz biliyor.
+
+Dış2 bir kanalı silince o cihaz kapıyı açamaz, "buradayım" diyemez. Ağ şifresi sızarsa saldırgan en fazla sahte zil ya da heartbeat üretebilir. Dış1'in cihaz anahtarı zil paneli bağlantısının anahtarı oluyor. Ayrıntı: 8.8.
+
+### Karar 25 — Login: 10 sn'de bir "buradayım"
+
+**Karar:** Eşleşmiş her iç ünite 10 sn'de bir dış2'ye cihaz anahtarıyla imzalı "buradayım" gönderiyor. Bu aynı zamanda login bildirimi. Dış2 son 30 sn içinde mesaj alamadığı cihazı çevrimdışı sayıyor ve o dairenin LED'ini söndürüyor. Normal modda sönük LED arıza ya da boş kanal anlamına geliyor.
+
+### Karar 26 — Zil onayı uçtan uca
+
+Ziyaretçi zilin çalıp çalmadığını bilmiyordu. ESP-NOW yayınları onaysız (Karar 10).
+
+**Karar:**
+- Daire, zili tetikleyince dış2'ye "çaldım" gönderiyor. Dış2 bunu bağlantı üzerinden dış1'e iletiyor.
+- Dış1 2 sn içinde onay alırsa aydınlatma LED'i 5 kez kısa yanıp sönüyor, almazsa 1 sn sönüp geri yanıyor.
+- Onay, iç ünitenin zil çıkışını tetiklediğini kanıtlıyor. Zilin kablosunun ya da kendisinin sağlam olduğunu kanıtlamıyor.
+
+Bir zil ve onayı kanalda bir kez ~0,13 sn yer kaplıyor.
+
+### Karar 27 — Aktarmayı bastırma (Trickle)
+
+Bugünkü kurala göre her mesajı bütün üniteler 3'er kopya aktarıyor. Periyodik mesajlar da her üniteden çıktığı için kanal yükü daire sayısının karesiyle büyüyor: 7 dairede ~%9, 30 dairede ~%95.
+
+**Karar:** Thread'in yayın aktarmasındaki yöntem uygulanıyor (Trickle, RFC 6206 / MPL, RFC 7731).
+- İlk gönderen 3 kopya gönderiyor.
+- Aktarıcı rastgele bir süre bekliyor. O sürede aynı mesajı başka aktarıcılardan k kez duyduysa aktarmıyor.
+- Sadece aktarıcıların kopyaları sayılıyor. İlk gönderenin kopyaları sayılsaydı onun menzilindeki herkes susar, uzaktaki katlara mesaj gitmezdi.
+
+Başlangıç değerleri: k = 2, aktarıcı 2 kopya. Aktarıcı tek kopya gönderseydi tek aktarıcının ulaştığı bir katta kayıp oranı %10'a çıkardı. Değerler sahada ayarlanacak.
+
+Kanal yükü 7 dairede ~%3–4'e, 30 dairede ~%8–9'a iniyor ve daire sayısıyla karesel büyümüyor. Karar 10'daki "aktarıcı 3 kopya" kuralının yerine geçiyor.
+
+### Karar 28 — Otomatik kanal seçimi
+
+Config kalkınca bütün binalar aynı kanalda olurdu. Komşu binaların yükleri toplanırdı.
+
+**Karar:**
+- Dış2 ilk açılışta 1, 6 ve 11 numaralı kanallardan (birbiriyle örtüşmeyenler) en sakinini seçiyor: en az ve en zayıf erişim noktası olanı, `WiFi.scanNetworks`.
+- Kanal binanın kimliğinin parçası.
+- Eşleşen kart dış2'yi bu üç kanalı sırayla deneyerek buluyor (Zigbee aktif tarama). Dış2 eşleşme sırasında kendi kanalından ayrılmıyor, bina trafiği kesilmiyor.
+- Kanal eşleşme cevabında bildiriliyor ve NVS'ye yazılıyor.
+
+Komşu binalar üç kanala dağılıyor.
 
 ---
 
@@ -230,12 +321,12 @@ YeniZil/
 ├── bell_panel/                     zil paneli (dış1), bina dışında
 │   ├── bell_panel.ino              bağlamalar
 │   ├── bell_panel.h                composition root + ünite ayarları
-│   ├── hardware.h                  kablolama: zil butonları
+│   ├── hardware.h                  kablolama: zil butonları, aydınlatma LED'i
 │   └── bell_panel_config.h         yüklemeden önce: bağlantı kimliği ve şifresi
 ├── door_unit/                      kapı ünitesi (dış2), bina içinde
 │   ├── door_unit.ino
 │   ├── door_unit.h
-│   ├── hardware.h                  kablolama: kapı rölesi
+│   ├── hardware.h                  kablolama: kapı rölesi, daire durum LED'leri, eşleştirme butonu
 │   └── door_unit_config.h          yüklemeden önce: bina ağı ve bağlantının kimlik ve şifreleri
 ├── indoor/
 │   ├── indoor.ino
@@ -252,11 +343,11 @@ YeniZil/
 │   │   ├── link_config.h           heartbeat aralığı
 │   │   └── power_config.h          CPU frekansı
 │   ├── kernel/   callback.h · clock.h · component.h · polling_component.h · periodic_timer.h · event_loop.h · byte_order.h · enum_value.h · static_checks.h
-│   ├── io/       board_pins.h · digital_pin.h · button_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h
+│   ├── io/       board_pins.h · digital_pin.h · id_pin.h · press_detector.h · button.h · button_group.h · pulse_output.h
 │   ├── net/      protocol.h · frame.h · nodes.h · frame_receiver.h · broadcast_peer.h · esp_now_radio.h · burst_sender.h · flood_router.h
 │   ├── security/ ccm_cipher.h · replay_window.h · counter_store.h · tx_counter.h · network_credentials.h · secure_channel.h
 │   ├── power/    power_manager.h
-│   └── app/      radio_stack.h · intercom.h · panel_link.h · bell.h · door_opener.h
+│   └── app/      radio_stack.h · intercom.h · panel_link.h · pairing.h · bell.h · door_opener.h
 ├── docs/ARCHITECTURE.md
 └── .gitignore                      build/
 ```
@@ -274,10 +365,11 @@ YeniZil/
 | `writeLe` / `readLe` | kernel | Tamsayıyı little-endian yazar/okur (`std::bit_cast`) | — |
 | `allUnique()` | kernel | Tabloda tekrar var mı, derleme zamanında | `consteval bool allUnique(items, key)` |
 | `setupInput()` / `isActive()` / `setupOutput()` / `writeOutput()` | io | Aktif seviyeye göre pin okuma ve yazma. Çıkış titremeden pasif açılır. | — |
-| `board::isSafeGpio()` | io | Super Mini'de açılışı etkilemeyen pinler | `constexpr bool isSafeGpio(pin)` |
+| `board::isSafeGpio()` | io | Super Mini'de açılışı etkilemeyen pinler: 0, 1, 3, 4, 5, 6, 7, 10, 20 | `constexpr bool isSafeGpio(pin)` |
 | `PressDetector` | core | Seviye ve zamandan geçerli basışı çıkarır: süre sınırları, bekleme süresi, açılışta basılı butonu bırakılana kadar yok sayma | `bool update(pressed, nowMs, settings)` |
 | `Button` | servis | Tek buton: 5 ms örnekleme + `PressDetector` | `onPress(Handler<>)` |
-| `ButtonGroup<Id, N>` | servis | Kimlikli N buton (`ButtonPin` tablosu), olay kimlikle gelir | `onPress(Handler<Id>)` |
+| `IdPin<Id>` | io | Kimlikli pin bağlantısı (buton ya da LED tablosunun satırı): daire numarası + pin | — |
+| `ButtonGroup<Id, N>` | servis | Kimlikli N buton (`IdPin` tablosu), olay kimlikle gelir | `onPress(Handler<Id>)` |
 | `PulseOutput` | servis | Belirli süre aktif kalan çıkış. Aktifken gelen tetik yok sayılır. Açılışta titremeden pasife çekilir. | `activate()` |
 | `Bell` / `DoorOpener` | app | Alan dilinde eylem (`PulseOutput` içerir) | `ring()` / `open()` |
 | `protocol` | core | `NodeId`, `NetworkId`, `FrameCounter`, `MacAddress`, `MessageType`, `Message`, sürüm. Ünite kimlikleri (`kDoorUnitId`, `kBellPanelId`, `kAllUnitsId`) ve hangi tipin herkese gittiği burada. | `isKnownMessageType()`, `isBroadcast()`, `matchesAddressing()` |
@@ -297,6 +389,7 @@ YeniZil/
 | `RadioStack` | app | Kartın ortak radyo katmanını kurar: radyo, tekrarlı gönderim, sayaç kaydı, gönderme sayacı | `radio()`, `bursts()`, `store()`, `txCounter()` |
 | `Intercom` | app (Facade) | Bina ağının şifrelemesini, güvenli kanalını ve yönlendiricisini kurar ve gizler, alan dilinde işlemler sunar | `ringFlat(NodeId)`, `requestDoorOpen()`, `broadcastHeartbeat()`, `onRing()`, `onDoorOpenRequest()`, `onHeartbeat()` |
 | `PanelLink` | app | Zil paneli bağlantısı (Karar 19): panel tarafında zil isteği gönderir, kapı ünitesi tarafında sadece panelin zil isteğini kabul eder. Aktarma yok. | `requestRing(NodeId)`, `onRingRequest(Handler<NodeId>)` |
+| `Pairing` | app | Eşleştirme modu: süreli pencere, süre dolunca kendiliğinden kapanır (Karar 21) | `open()`, `isOpen()` |
 | `PowerManager` | platform | CPU frekansı | `begin()` |
 
 **Tasarım kuralları:**
@@ -329,6 +422,7 @@ void setup() {
   panelLink.onRingRequest([](NodeId flat) { intercom.ringFlat(flat); });  // Zil panelinden N. daire isteği -> N. dairenin zili
   intercom.onDoorOpenRequest([] { doorOpener.open(); });                  // Kapı açma isteği -> kapı açılır
   heartbeatTimer.onTick([] { intercom.broadcastHeartbeat(); });           // Periyot doldu -> "buradayım" yayını
+  pairingButton.onPress([] { pairing.open(); });                          // Eşleştirme butonu 10-15 sn basılı tutulup bırakıldı -> eşleştirme modu açılır
   eventLoop.begin();
 }
 
@@ -429,7 +523,9 @@ bekleme süresi dolmuş)
 | Zil darbesi | 1,5 sn (1–2 sn) | indoor.h | Gereksinim |
 | Zil bekleme süresi | 3 sn | bell_panel.h | 1,5 sn darbe + 1,5 sn sessizlik |
 | Kapı isteği bekleme süresi | 2 sn | indoor.h | Mühendislik tercihi |
-| Heartbeat aralığı | 1 sn | link_config.h | Kopukluk birkaç saniyede fark edilsin, kanal yükü ~%3 |
+| Eşleştirme basışı | 10–15 sn, bırakınca | door_unit.h | Kazara basış ve sıkışmış buton ayrılsın |
+| Eşleştirme penceresi | 180 sn | door_unit.h | Zigbee BDB `bdbcMinCommissioningTime` |
+| Heartbeat aralığı | 1 sn | link_config.h | Kopukluk birkaç saniyede fark edilsin, kanal yükü ~%5 (8 ünite) |
 | Bağlantı LED darbesi | 10 ms | indoor.h | Her heartbeat'te kısa bir yanıp sönme. Heartbeat aralığından kısa olmalı |
 | Tekrar sayısı | 3 kopya (1–5) | radio_config.h | Onaysız yayında 4 katta kaçırma ≈ %0,4 (Karar 10) |
 | Tekrar aralığı | 20 ms | radio_config.h | Kısa bir parazit iki kopyayı birden bozmasın |
@@ -544,7 +640,9 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 
 ## 6. Durum
 
-**Kod:** Tüm işlevler yazıldı: G/Ç, ağ ve aktarma, güvenlik, güç tasarrufu, denetimler.
+**Kod (v2):** Tüm işlevler yazıldı: G/Ç, ağ ve aktarma, güvenlik, güç tasarrufu, denetimler. Kimlik ve şifreler config dosyalarından geliyor.
+
+**v3 tasarımı (bölüm 8, Karar 21–28):** Karar verildi, kod bekliyor. v3 ile config dosyaları kalkacak, kurulum aşağıdaki maddelerin yerine eşleştirmeyle yapılacak (8.5–8.7).
 
 **Kurulum için gerekenler:**
 1. Bina ağının kimliği ve şifresi `door_unit_config.h` ile `indoor_config.h` içinde aynı olmalı. Zil paneli bağlantısının kimliği ve şifresi `bell_panel_config.h` ile `door_unit_config.h` içinde aynı olmalı. Değiştirilirse eşleşen dosyalara aynen yazılır.
@@ -560,11 +658,180 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 - Kapı rölesi 3.3V ile tetikleniyor ve kendi izole güç beslemesi var. Kapı ünitesinin ESP'si sadece tetik girişini sürüyor.
 - Kendi bağlanan her LED'e 240 Ω seri direnç şart: bağlantı LED'i, röle ya da zil yerine takılan test LED'i. 3.3V'ta akım renge göre ~1–5 mA olur. Pin-GND arasındaki 10k pull-down akımı sınırlamaz. Dirençsiz LED pinden aşırı akım çeker, çipi ısıtır ve pini bozabilir (yük testinde eski dış ünitede yaşandı).
 - Kapı ünitesi (dış2) ve kapı rölesi tetiği bina içinde. Bina dışında sadece zil paneli (dış1) var (Karar 2). Panelde bina ağının şifresi olmadığı için (Karar 19) flash şifrelemeye ve ESP-IDF'e geçişe gerek yok.
-- Her ünite (6 kart) 5V 300 mA adaptörle besleniyor. Ortalama tüketim ~85–100 mA (radyo sürekli dinliyor). Gönderim anında tepe akım 8 dBm'de tahminen 150–200 mA. Anlık düşüşlere karşı kartın 5V ve GND uçları arasına 470 µF elektrolitik kondansatör önerilir. TX gücü 14 dBm'in üstüne çıkarılacaksa en az 500 mA'lik adaptör gerekir.
+- Her ünite (9 kart) 5V 300 mA adaptörle besleniyor. Ortalama tüketim ~85–100 mA (radyo sürekli dinliyor). Gönderim anında tepe akım 8 dBm'de tahminen 150–200 mA. Anlık düşüşlere karşı kartın 5V ve GND uçları arasına 470 µF elektrolitik kondansatör önerilir. TX gücü 14 dBm'in üstüne çıkarılacaksa en az 500 mA'lik adaptör gerekir.
 
 **Açık kalan:**
 1. Zil panelinin buton hatları için koruma: her butonun pini ile kablosu arasına 1 kΩ seri direnç, pin ile GND arasına 100 nF kondansatör. Butona dokunan elden gelen statik elektriği ve kablonun topladığı paraziti azaltır. Direnç pine giden akımı sınırlar, kondansatör kısa sıçramaları yutar. Yazılım 50 ms'den kısa basışları zaten yok sayıyor, bu donanım önlemi daha çok pini korumak için.
-2. Zil panelinin kutusu: bina dışında olduğu için yağmura, neme ve güneşe dayanıklı (ör. IP65) olmalı, adaptörü de buna göre korunmalı. Kart ile kapı ünitesi arasındaki menzil sahada denenmeli. Duvar ya da metal kapı sinyali zayıflatırsa kapı ünitesi kapıya yakın konur ya da TX gücü artırılır.
+2. Panel aydınlatma LED'i (dış1 GPIO10) ve daire durum LED'leri (dış2): davranışları 8.4'te belirlendi, kod v3 ile gelecek. Şimdilik kod bu pinlere dokunmuyor, LED'ler sönük. Aydınlatma LED'i zil onayında yanıp söndüğü için GPIO'da kalmalı. Tek LED + 240 Ω ise doğrudan pine bağlanır. Birden çok LED ya da şerit olacaksa ~20 mA'i aşar, araya MOSFET gerekir.
+3. Zil panelinin kutusu: bina dışında olduğu için yağmura, neme ve güneşe dayanıklı (ör. IP65) olmalı, adaptörü de buna göre korunmalı. Kart ile kapı ünitesi arasındaki menzil sahada denenmeli. Duvar ya da metal kapı sinyali zayıflatırsa kapı ünitesi kapıya yakın konur ya da TX gücü artırılır.
+
+## 8. v3 tasarımı: eşleştirme (karar verildi, kod bekliyor)
+
+### 8.1 Hedefler
+
+- Bütün iç ünitelerde ve dış1'lerde aynı yazılım. Config dosyası yok, kartlar kurulumda kendilerini yapılandırıyor.
+- Binaya özgü tek kart dış2. A ve B apartmanlarının ağları asla karışmıyor.
+- Bir iç ünite sökülüp başka bir binada başka bir daireye eşleştirilebiliyor. Arızalı cihaz değiştirilebiliyor, sakin sonradan kendi cihazını alıp katılabiliyor.
+- Eşleştirme apartman girişinde, iç ünite dış2'nin yanındayken yapılıyor. Yetki vidalı kutuyu açandayken.
+
+### 8.2 Kayıtlar (NVS)
+
+| Kart | Kayıt | Nereden |
+|---|---|---|
+| Dış2 | Bina ağının kimliği ve şifresi, bağlantının kimliği, radyo kanalı | İlk açılışta kendisi üretir (Karar 22, 28) |
+| Dış2 | Kanal tablosu: daire 1–7 → `{MAC, cihaz anahtarı, kalıcı mı}` | Eşleşme |
+| Dış2 | Dış1 kaydı: `{MAC, cihaz anahtarı}` | Eşleşme |
+| Dış2 | MAC başına görülen en yüksek sayaç (sayaç tabanı) | Çalışırken |
+| İç ünite | Ağ kimliği ve şifresi, radyo kanalı, daire numarası, cihaz anahtarı, dış2'nin MAC'i | Eşleşme |
+| Dış1 | Bağlantının kimliği, radyo kanalı, cihaz anahtarı, dış2'nin MAC'i | Eşleşme |
+| Hepsi | Gönderme sayacı rezervi, gönderen MAC başına son eylem sayacı | Bugünkü gibi (Karar 3, 13) |
+
+Eşleşmemiş bir iç ünite ya da dış1 hiçbir şey göndermez ve aktarma yapmaz. Dış2 tablosunda olmayan bir MAC'ten gelen kapı açma, "buradayım" ve "çaldım" mesajlarını atar.
+
+### 8.3 Butonlar
+
+| Kart | Buton | 50 ms – 5 sn | 10–15 sn |
+|---|---|---|---|
+| İç ünite | Kapı aç (GPIO10) | Normal modda: kapıyı aç<br>Eşleşme modunda: sonraki kanal | Normal modda: eşleşmeye gir<br>Eşleşme modunda: onayla |
+| Dış2 | BOOT (GPIO9, kart üstünde) | Eşleşme modunda: seçili dolu kanalı sil | Eşleşme modunu aç |
+| Dış1 | BOOT (GPIO9, kart üstünde) | — | Eşleşme modunu aç |
+| Dış1 | Zil butonları | Zil | — |
+
+- 5–10 sn arası ve 15 sn'den uzun basışlar yok sayılıyor. Bugünkü 30 sn'lik üst sınır 5 sn'ye iniyor, yoksa uzun basış kapıyı açar ya da zili çalar.
+- Kanal seçilmeden yapılan 10–15 sn basış onay sayılmıyor.
+- Eşleşme modu 30 sn işlem yapılmazsa kapanıyor (Karar 21).
+- Kart üstündeki BOOT butonu `hardware.h`'ye değil, kart tanımına (`board_pins.h`) girer.
+
+### 8.4 LED'ler
+
+**Dış2 daire LED'leri:**
+
+| Kanal durumu | Normal mod | Eşleşme modu |
+|---|---|---|
+| Boş | sönük | yanıp söner (500/500 ms) |
+| Dolu, cihaz çevrimiçi | sürekli yanık | sönük |
+| Dolu, cihaz çevrimdışı (30 sn sessiz) | sönük (arıza işareti) | sönük |
+| İç ünitenin şu an seçtiği kanal | — | sürekli yanık |
+| Hata (ikinci aday, red, süre doldu) | — | bütün LED'ler 3 sn hızlı yanıp söner (100/100 ms) |
+| Dış1 eşleşti | — | bütün LED'ler iki kez yanıp söner |
+
+**İç ünite bağlantı LED'i ve zili:**
+
+| Durum | Gösterge |
+|---|---|
+| Eşleşmiş, normal | Dış2'nin her heartbeat'inde 10 ms yanar (bugünkü gibi) |
+| Eşleşmemiş | sönük |
+| Eşleşme modunda | hızlı yanıp söner (100/100 ms) |
+| Eşleşme başarılı | 2 sn sürekli yanar |
+| Eşleşme reddedildi ya da süre doldu | zil 3 kez kısa çalar |
+
+**Dış1 aydınlatma LED'i:** Sürekli yanık (saat kaynağı yok, 1.3). Zil onayı gelirse 5 kez kısa yanıp söner (150/150 ms), 2 sn içinde gelmezse 1 sn sönüp geri yanar (Karar 26).
+
+### 8.5 İç ünite eşleşme akışı
+
+```
+İç ünite                                            Dış2
+────────                                            ────
+                                                    BOOT 10–15 sn → eşleşme modu
+                                                    boş kanallar yanıp söner, dolular sönük
+Kapı butonu 10–15 sn → eşleşme modu
+JoinHello {açık anahtar} ── kanal 1, 6, 11 sırayla ──→ tek aday mı? sinyal güçlü mü?
+                         ←── JoinOffer {açık anahtar} ── ikisi de X25519 + HKDF:
+                                                         oturum anahtarı + cihaz anahtarı
+Kısa basış ── SelectNext ───────────────────────────→ ilk: en küçük boş kanal, sonra 1→7 döngüsel
+                         ←── Selected {kanal} ───────── seçili kanalın LED'i sürekli yanar
+(kanal doluysa)                                     BOOT kısa basış → kanal silinir
+10–15 sn ── Confirm {kanal} ────────────────────────→ kanal boş mu? geçici kayıt
+                         ←── Welcome {ağ kimliği, ── (oturum anahtarıyla şifreli)
+                              ağ şifresi, radyo kanalı,
+                              daire no, sayaç tabanı}
+NVS'ye yaz, eşleşme modundan çık
+"Buradayım" (cihaz anahtarıyla) ───────────────────→ kayıt kalıcı olur
+```
+
+**Kurallar:**
+- **Tek oturum:** Dış2 aynı anda tek adayla oturum açıyor. Oturum bitince pencere açık kalıyor ve süre baştan başlıyor. Sıradaki cihaz hemen eşleşebiliyor.
+- **Güvenilir istek–cevap:** İç ünite cevap gelene kadar isteği tekrarlıyor, dış2 aynı isteğe aynı cevabı veriyor.
+- **Geçici kayıt:** Cihaz anahtarıyla imzalı ilk "buradayım" 60 sn içinde gelmezse siliniyor. Yarım kalan eşleşme hayalet kayıt bırakmıyor.
+- **Sayaç tabanı:** Flash'ı silinip aynı binaya dönen cihazın sayacı 0'dan başlar, ve bu cihaz tekrar sanılırdı. Bunu önlemek için iç ünite sayacına dış2'nin o MAC için gördüğü en yüksek değerden devam ediyor.
+- **Bir MAC, bir kanal:** Aynı binada başka kanala geçen cihazın eski kaydı otomatik siliniyor.
+- **Eski eşleşme korunuyor:** Eşleşmiş bir cihaz eşleşme moduna girip onay vermeden çıkarsa eski eşleşmesi bozulmuyor. Yeni bir onay eski ağ bilgilerinin üstüne yazıyor, taşımak için fabrika ayarına dönmek gerekmiyor.
+
+### 8.6 Dış1 eşleşmesi
+
+Dış2 eşleşme modundayken dış1'in BOOT butonuna 10–15 sn basılıyor. Aynı JoinHello / JoinOffer akışı çalışıyor, ama kanal seçimi yok. Welcome bağlantının kimliğini, radyo kanalını ve sayaç tabanını taşıyor, cihaz anahtarı bağlantının şifresi oluyor. Yeni bir dış1 eşleşirse eskisinin kaydının yerine geçiyor.
+
+### 8.7 Senaryolar
+
+| Durum | Akış |
+|---|---|
+| İlk kurulum | Dış2 eşleşme modunda, iç üniteler sırayla yanına getirilip eşleştirilir. Ardından dış1 eşleştirilir. |
+| Sakin kendi cihazını alır | Kanal boşsa 8.5'teki akış |
+| Bozulan cihaz değişir | Yeni cihaz dolu kanala gelir (sönük LED seçilince yanar) → dış2'de BOOT kısa basış ile kanal silinir → iç ünitede onay. Eski cihaz kapıyı açamaz (Karar 24). |
+| A5 → B3 taşıma | B'de normal eşleşme yapılır. A'da 5. kanal kendiliğinden boşalmaz. Herhangi bir iç ünite "kumanda" olarak eşleşme moduna sokulur, 5. kanal seçilir, BOOT kısa basış ile silinir, onay vermeden beklenir. Kumandanın kendi eşleşmesi bozulmaz. |
+| Dış2 bozulur | Yeni dış2 yeni bir kimlikle başlar. Bütün iç üniteler ve dış1 yeniden eşleşir. |
+
+### 8.8 Normal çalışma
+
+| Mesaj | Yön | Ağ anahtarı | Cihaz anahtarı | Ne zaman |
+|---|---|---|---|---|
+| Heartbeat | Dış2 → herkes | ✓ | — | 1 sn'de bir (Karar 18) |
+| Buradayım | Daire → dış2 | ✓ | ✓ | 10 sn'de bir (Karar 25) |
+| Kapıyı aç | Daire → dış2 | ✓ | ✓ | Kısa basış |
+| Zil çal | Dış2 → daire | ✓ | — | Panelden istek gelince |
+| Çaldım | Daire → dış2 | ✓ | ✓ | Zil tetiklenince |
+| Zil isteği | Dış1 → dış2 (bağlantı) | — | ✓ (bağlantı anahtarı) | Zil butonu |
+| Zil onaylandı {daire} | Dış2 → dış1 (bağlantı) | — | ✓ (bağlantı anahtarı) | "Çaldım" gelince |
+
+### 8.9 Çerçeveler
+
+| Çerçeve | Boyut | İçerik |
+|---|---|---|
+| Bina / bağlantı, tek etiket | 27 bayt | Başlık 17 + yük 2 (tip + argüman) + etiket 8 |
+| Bina, iki etiket | 35 bayt | Yukarıdaki + cihaz anahtarıyla iç etiket 8 (yükle birlikte şifreli) |
+| Eşleşme (JoinHello, JoinOffer) | ~50 bayt | Sürüm, rol, MAC, 32 bayt açık anahtar. Şifresiz, aktarılmaz. |
+| Eşleşme (SelectNext … Welcome) | ≤ 64 bayt | Oturum anahtarıyla AES-CCM, aktarılmaz |
+
+- Yükteki argüman baytı daire numarasını taşıyor ("zil onaylandı"). Çerçeve biçimi değiştiği için protokol v3 oluyor, bütün kartlar yeniden yükleniyor.
+- Radyo bugün sadece 26 baytlık çerçeveyi kabul ediyor. Bilinen boyutları kabul edip türe göre dağıtacak.
+- Nonce bugünkü gibi `MAC + sayaç`. Anahtarlar farklı olduğu için iki etiketin aynı sayacı kullanması güvenli.
+
+### 8.10 Durum makineleri
+
+**İç ünite:**
+```
+Eşleşmemiş ──10–15 sn──▶ Arıyor ──JoinOffer──▶ Seçiyor ──10–15 sn (kanal seçili)──▶ Onay bekliyor ──Welcome──▶ Eşleşmiş
+                           │                      │                                     │
+                           └──── 30 sn / ikinci cevap / red ──────────────────────────┴──▶ önceki durum
+Eşleşmiş ──10–15 sn──▶ Arıyor   (eski bilgiler yeni onaya kadar korunur)
+```
+
+**Dış2:**
+```
+Normal ──BOOT 10–15 sn──▶ Pencere açık ──JoinHello (tek aday, güçlü sinyal)──▶ Oturum(MAC) ──Confirm──▶ geçici kayıt, Welcome
+                             ▲   │                                               │
+                             │   └── 30 sn işlem yok ──▶ Normal                   ├── ikinci aday ──▶ Hata (3 sn) ──▶ Normal
+                             └──────────── oturum bitti, süre baştan ─────────────┘
+```
+
+**Dış1:**
+```
+Eşleşmemiş ──BOOT 10–15 sn──▶ Arıyor ──Welcome──▶ Eşleşmiş
+Eşleşmiş: zil butonu ──▶ Onay bekliyor (2 sn) ──onay──▶ 5 kez yanıp söner
+                                               └─süre doldu──▶ 1 sn söner
+```
+
+### 8.11 v3 ile değişecek mevcut kararlar ve kurallar
+
+| Karar / kural | Değişiklik |
+|---|---|
+| Karar 4 | Daire numarası eşleşmede veriliyor (kanal = daire). Nonce MAC'ten üretilmeye devam ediyor. |
+| Karar 10 | Aktarıcı kopya sayısı Karar 27'ye göre |
+| Karar 11 | Config dosyaları kalkıyor (Karar 22) |
+| Karar 13 | "Flash'ı asla silme" kuralı yumuşuyor: silinen kart şifrelerini de kaybeder ve yeniden eşleşir, nonce tekrarı olmaz. Dış2 silinirse bina yeniden kurulur. |
+| Karar 19 | Bağlantının kimliği ve şifresi eşleşmede oluşuyor |
+| 4. bölüm | Kapı basışı ve zil basışı üst sınırı 30 sn → 5 sn, eşleşme 10–15 sn, pencere 30 sn |
+| `CLAUDE.md` | Kurulum istisnası ("daire numarası config'de"), config dosyaları ve güvenlik kuralları v3 koduyla birlikte güncellenecek |
 
 ---
 
@@ -577,4 +844,8 @@ Sıra: önce Arduino-ESP32 core'un API ve kütüphaneleri, Arduino karşılığ�
 - Tuş basılı tutma süreleri: https://wraitor.io/learn/keystroke-dynamics
 - RFC 6347 (DTLS 1.2) tekrar penceresi: https://www.rfc-editor.org/rfc/rfc6347
 - OpenThread `STORE_FRAME_COUNTER_AHEAD`: https://openthread.io/reference/config/group/config-misc
+- RFC 6206 (Trickle): https://www.rfc-editor.org/rfc/rfc6206
+- RFC 7731 (MPL): https://www.rfc-editor.org/rfc/rfc7731
+- RFC 7748 (X25519): https://www.rfc-editor.org/rfc/rfc7748
+- RFC 5869 (HKDF): https://www.rfc-editor.org/rfc/rfc5869
 - HMI buton zaman aşımı pratiği: https://industrialmonitordirect.com/blogs/knowledgebase/hmi-button-set-while-pressed-timeout-issues-and-best-practices
