@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include "hardware.h"
 #include "door_unit_config.h"
 #include "../common/app/door_opener.h"
@@ -10,8 +12,10 @@
 #include "../common/config/link_config.h"
 #include "../common/config/power_config.h"
 #include "../common/config/radio_config.h"
+#include "../common/io/id_pin.h"
 #include "../common/kernel/event_loop.h"
 #include "../common/kernel/periodic_timer.h"
+#include "../common/net/nodes.h"
 #include "../common/net/protocol.h"
 #include "../common/power/power_manager.h"
 #include "../common/security/network_credentials.h"
@@ -35,6 +39,8 @@ static_assert(kDoorPulseMs >= 1000 && kDoorPulseMs <= 2000, "Kapı tetik süresi
 static_assert(isAssigned(kNetwork), "Ağ kimliği ya da şifresi atanmamış: door_unit_config.h içinde rastgele doldurulmalı");
 static_assert(isAssigned(kPanelLink), "Bağlantı kimliği ya da şifresi atanmamış: door_unit_config.h içinde rastgele doldurulmalı");
 static_assert(isSeparate(kNetwork, kPanelLink), "Bina ağı ile zil paneli bağlantısının kimliği ve şifresi farklı olmalı: panel ele geçse kapı açılmasın");
+static_assert(std::all_of(std::begin(pins::kFlatLeds), std::end(pins::kFlatLeds), [](const IdPin<NodeId>& led) { return isFlatId(led.id); }),
+              "Daire LED'i olmayan bir daireye bağlı: building_config.h kFlatCount");
 
 }  // namespace yenizil::config
 

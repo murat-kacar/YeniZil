@@ -11,7 +11,7 @@
 #include "../common/config/press_settings.h"
 #include "../common/config/radio_config.h"
 #include "../common/io/button_group.h"
-#include "../common/io/button_pin.h"
+#include "../common/io/id_pin.h"
 #include "../common/kernel/event_loop.h"
 #include "../common/net/nodes.h"
 #include "../common/net/protocol.h"
@@ -32,7 +32,7 @@ inline constexpr NetworkCredentials kPanelLink = {        // Kapı ünitesiyle b
 };
 
 static_assert(isAssigned(kPanelLink), "Bağlantı kimliği ya da şifresi atanmamış: bell_panel_config.h içinde rastgele doldurulmalı");
-static_assert(std::all_of(std::begin(pins::kFlatButtons), std::end(pins::kFlatButtons), [](const ButtonPin<NodeId>& button) { return isFlatId(button.id); }),
+static_assert(std::all_of(std::begin(pins::kFlatButtons), std::end(pins::kFlatButtons), [](const IdPin<NodeId>& button) { return isFlatId(button.id); }),
               "Daire butonu olmayan bir daireye bağlı: building_config.h kFlatCount");
 
 }  // namespace yenizil::config
