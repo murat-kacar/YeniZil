@@ -23,11 +23,15 @@ inline constexpr IdPin<NodeId> kFlatLeds[] = {            // Daire durum LED'ler
 inline constexpr uint8_t kFlatLedActive   = HIGH;         // LED'i yakan seviye
 inline constexpr uint8_t kDoorRelay       = 10;           // Kapı rölesi tetiği: 3.3V, pin-GND arası 10k pull-down şart
 inline constexpr uint8_t kDoorRelayActive = HIGH;         // Röle tetik seviyesi
+inline constexpr uint8_t kPairingButton   = 20;           // Eşleştirme butonu: pin - buton - GND
+inline constexpr uint8_t kButtonActive    = LOW;          // Buton basılıyken LOW okunur (dahili pull-up)
 
 static_assert(allUnique(kFlatLeds, [](const IdPin<NodeId>& led) { return led.pin; }), "Aynı pine iki LED bağlanamaz");
 static_assert(allUnique(kFlatLeds, [](const IdPin<NodeId>& led) { return led.id; }), "Aynı daireye iki LED atanamaz");
-static_assert(std::none_of(std::begin(kFlatLeds), std::end(kFlatLeds), [](const IdPin<NodeId>& led) { return led.pin == kDoorRelay; }), "Röle pini bir LED'le çakışıyor");
+static_assert(std::none_of(std::begin(kFlatLeds), std::end(kFlatLeds), [](const IdPin<NodeId>& led) { return led.pin == kDoorRelay || led.pin == kPairingButton; }), "Röle ya da eşleştirme butonu pini bir LED'le çakışıyor");
+static_assert(kPairingButton != kDoorRelay, "Eşleştirme butonu röle pinine bağlanamaz");
 static_assert(std::all_of(std::begin(kFlatLeds), std::end(kFlatLeds), [](const IdPin<NodeId>& led) { return board::isSafeGpio(led.pin); }), "LED pini strapping/USB/UART pinine denk geliyor");
 static_assert(board::isSafeGpio(kDoorRelay), "Röle pini strapping/USB/UART pinine denk geliyor");
+static_assert(board::isSafeGpio(kPairingButton), "Eşleştirme butonu pini strapping/USB/UART pinine denk geliyor");
 
 }  // namespace yenizil::pins
